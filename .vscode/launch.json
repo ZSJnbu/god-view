@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // F5 启动 Extension Development Host。
+      // 直接打开手测夹具作为工作区，省去每次手动选目录。
+      "name": "运行扩展（sample-project 夹具）",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/apps/vscode-extension",
+        "${workspaceFolder}/fixtures/sample-project"
+      ],
+      "outFiles": ["${workspaceFolder}/apps/vscode-extension/dist/**/*.js"],
+      "preLaunchTask": "build"
+    },
+    {
+      "name": "运行扩展（不指定工作区）",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/apps/vscode-extension"],
+      "outFiles": ["${workspaceFolder}/apps/vscode-extension/dist/**/*.js"],
+      "preLaunchTask": "build"
+    }
+  ]
+}

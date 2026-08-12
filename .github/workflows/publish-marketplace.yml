@@ -1,0 +1,75 @@
+name: Publish to VS Code Marketplace
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Immutable release tag, for example v0.2.0'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type publish to authorize Marketplace upload'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Verify and publish
+    if: inputs.confirmation == 'publish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: marketplace
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require tag and manifest versions to match
+        shell: bash
+        run: |
+          manifest_version="$(node -p "require('./apps/vscode-extension/package.json').version")"
+          test "${{ inputs.tag }}" = "v${manifest_version}"
+
+      - name: Re-run public release gates
+        run: |
+          pnpm run generated-files-check
+          pnpm run check
+          pnpm run test:coverage
+          pnpm run release:verify:public
+
+      - name: Package and checksum exact artifact
+        run: |
+          pnpm --filter './apps/vscode-extension' run package
+          shasum -a 256 apps/vscode-extension/*.vsix | tee apps/vscode-extension/SHA256SUMS
+
+      - name: Publish exact VSIX
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        shell: bash
+        run: |
+          test -n "${VSCE_PAT}"
+          vsix="$(find apps/vscode-extension -maxdepth 1 -name '*.vsix' -print -quit)"
+          test -n "${vsix}"
+          pnpm --filter './apps/vscode-extension' exec vsce publish --packagePath "${vsix}" --pat "${VSCE_PAT}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: published-vsix-${{ github.run_id }}
+          path: |
+            apps/vscode-extension/*.vsix
+            apps/vscode-extension/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90

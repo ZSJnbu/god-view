@@ -1,0 +1,31 @@
+{
+  "name": "@god-view/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema/*": "./schema/*"
+  },
+  "files": [
+    "dist",
+    "schema"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "generate": "node scripts/generate-types.mts"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.4",
+    "@apidevtools/json-schema-ref-parser": "^15.5.1"
+  }
+}

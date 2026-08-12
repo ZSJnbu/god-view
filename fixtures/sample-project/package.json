@@ -1,0 +1,7 @@
+{
+  "name": "god-view-sample-project",
+  "version": "0.0.0",
+  "private": true,
+  "description": "God View 手测夹具：一个结构清晰的小型服务。",
+  "type": "module"
+}

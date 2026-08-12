@@ -1,0 +1,15 @@
+{
+  "contentHash": "8f0fce6e7b9b933a",
+  "document": {
+    "schemaVersion": "1.0",
+    "workspaceId": "ws-compat-0-1-0",
+    "branchKey": "main",
+    "revision": 0,
+    "lastEventSeq": 0,
+    "createdAt": "2026-08-11T00:00:00.000Z",
+    "nodes": [],
+    "edges": [],
+    "activeChanges": [],
+    "appliedEventIds": []
+  }
+}

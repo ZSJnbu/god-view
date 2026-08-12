@@ -1,0 +1,624 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graph.schema.json",
+  "title": "GraphSnapshotDocument",
+  "description": "地图快照的持久化形态。节点与边使用按 id 排序的数组而不是对象字典，保证同一事件序列回放得到字节等价的序列化结果。",
+  "$defs": {
+    "SourceKind": {
+      "title": "SourceKind",
+      "type": "string",
+      "enum": ["agent_declared", "inferred", "user_created"],
+      "description": "实体的声明来源。与 codeValidation、userConfirmation 相互独立，不可互相冒充。"
+    },
+    "Provenance": {
+      "title": "Provenance",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "actor", "declaredAt"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/SourceKind" },
+        "actor": { "$ref": "common.schema.json#/$defs/Actor" },
+        "sessionId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "declaredAt": { "$ref": "common.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "CodeValidationStatus": {
+      "title": "CodeValidationStatus",
+      "type": "string",
+      "enum": ["unverified", "verified", "failed", "unsupported", "drifted"],
+      "description": "verified 仅表示路径/文件/显式依赖证据成立，不表示业务职责描述正确。"
+    },
+    "CodeValidationState": {
+      "title": "CodeValidationState",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "$ref": "#/$defs/CodeValidationStatus" },
+        "level": { "$ref": "common.schema.json#/$defs/ValidationLevel" },
+        "validator": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "checkedAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "evidence": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "common.schema.json#/$defs/Evidence" }
+        },
+        "detail": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "UserConfirmationState": {
+      "title": "UserConfirmationState",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["unconfirmed", "confirmed", "rejected"] },
+        "confirmedAt": { "$ref": "common.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "LifecycleState": {
+      "title": "LifecycleState",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["planned", "in_progress", "active", "failed", "removed"],
+          "description": "change_start 与 change_complete 之间的实体标记为 in_progress，用户可见但不是完成状态；变更失败或中断时标记为 failed，已产生的代码改动不自动回滚。"
+        },
+        "changeSetId": { "$ref": "common.schema.json#/$defs/Identifier" }
+      }
+    },
+    "GraphNode": {
+      "title": "GraphNode",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "label",
+        "source",
+        "codeValidation",
+        "userConfirmation",
+        "lifecycle",
+        "updatedAt",
+        "revision"
+      ],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "type": { "$ref": "common.schema.json#/$defs/NodeType" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "responsibility": { "type": "string", "maxLength": 200 },
+        "parentId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "paths": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "locations": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/CodeLocation" }
+        },
+        "declaredEvidence": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/Evidence" }
+        },
+        "uncertainties": { "type": "array", "items": { "type": "string", "maxLength": 200 } },
+        "visualHint": { "$ref": "common.schema.json#/$defs/VisualHint" },
+        "source": { "$ref": "#/$defs/Provenance" },
+        "codeValidation": { "$ref": "#/$defs/CodeValidationState" },
+        "userConfirmation": { "$ref": "#/$defs/UserConfirmationState" },
+        "lifecycle": { "$ref": "#/$defs/LifecycleState" },
+        "updatedAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "最后一次修改该实体时的地图版本号。用于检测 Agent 基于过期基线的覆盖写。"
+        }
+      }
+    },
+    "GraphEdge": {
+      "title": "GraphEdge",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "from",
+        "to",
+        "type",
+        "source",
+        "codeValidation",
+        "userConfirmation",
+        "lifecycle",
+        "updatedAt",
+        "revision"
+      ],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "from": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "to": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "type": { "$ref": "common.schema.json#/$defs/EdgeType" },
+        "reason": { "type": "string", "maxLength": 200 },
+        "declaredEvidence": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/Evidence" }
+        },
+        "source": { "$ref": "#/$defs/Provenance" },
+        "codeValidation": { "$ref": "#/$defs/CodeValidationState" },
+        "userConfirmation": { "$ref": "#/$defs/UserConfirmationState" },
+        "lifecycle": { "$ref": "#/$defs/LifecycleState" },
+        "updatedAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "最后一次修改该实体时的地图版本号。用于检测 Agent 基于过期基线的覆盖写。"
+        }
+      }
+    },
+    "ActiveChange": {
+      "title": "ActiveChange",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changeSetId",
+        "sessionId",
+        "intent",
+        "startedAt",
+        "touchedNodeIds",
+        "touchedEdgeIds"
+      ],
+      "properties": {
+        "changeSetId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "sessionId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "intent": { "type": "string", "maxLength": 200 },
+        "startedAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "plannedFiles": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "touchedNodeIds": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        },
+        "touchedEdgeIds": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        },
+        "proposalId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "approvalToken": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "approvedScope": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "permissionMode": { "type": "string", "enum": ["enforced", "monitored"] },
+        "baseMapRevision": { "type": "integer", "minimum": 0 },
+        "baseGitRevision": { "type": "string", "maxLength": 100 },
+        "preexistingChanges": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "executionStatus": {
+          "type": "string",
+          "enum": ["in_progress", "scope_violation", "conflicted", "interrupted", "failed"]
+        },
+        "diff": { "$ref": "#/$defs/ChangeDiffSummary" }
+      }
+    },
+    "DiffFile": {
+      "title": "DiffFile",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "status", "additions", "deletions", "scopeStatus", "attribution"],
+      "properties": {
+        "path": { "$ref": "common.schema.json#/$defs/WorkspacePath" },
+        "status": {
+          "type": "string",
+          "enum": ["added", "modified", "deleted", "renamed", "unknown"]
+        },
+        "additions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "scopeStatus": { "type": "string", "enum": ["approved", "outside_scope"] },
+        "attribution": {
+          "type": "string",
+          "enum": ["change_set", "preexisting_overlap", "unknown_external"]
+        }
+      }
+    },
+    "ChangeDiffSummary": {
+      "title": "ChangeDiffSummary",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "additions", "deletions", "computedAt", "contentHash"],
+      "properties": {
+        "files": { "type": "array", "maxItems": 2000, "items": { "$ref": "#/$defs/DiffFile" } },
+        "additions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "computedAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "contentHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "DriftKind": {
+      "title": "DriftKind",
+      "type": "string",
+      "enum": ["missing_file", "unclassified_file", "undeclared_change", "conflicting_declaration"],
+      "description": "漂移类型。missing_file 表示地图声明的文件已不存在；unclassified_file 表示仓库中的第一方文件尚未归属任何节点。"
+    },
+    "DriftFinding": {
+      "title": "DriftFinding",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "detail"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/DriftKind" },
+        "detail": { "type": "string", "maxLength": 500 },
+        "targetId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "path": { "$ref": "common.schema.json#/$defs/WorkspacePath" },
+        "detectedAt": { "$ref": "common.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "CoverageReason": {
+      "title": "CoverageReason",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "count"],
+      "properties": {
+        "reason": { "type": "string", "maxLength": 100 },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "CoverageReport": {
+      "title": "CoverageReport",
+      "description": "覆盖率以插件生成的第一方文件清单为分母，禁止由 Agent 自报节点数量计算。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "includedSources",
+        "includedConfigs",
+        "includedAssets",
+        "classified",
+        "unclassified",
+        "excluded",
+        "failed",
+        "reasons",
+        "computedAt"
+      ],
+      "properties": {
+        "includedSources": { "type": "integer", "minimum": 0 },
+        "includedConfigs": { "type": "integer", "minimum": 0 },
+        "includedAssets": { "type": "integer", "minimum": 0 },
+        "classified": { "type": "integer", "minimum": 0 },
+        "unclassified": { "type": "integer", "minimum": 0 },
+        "excluded": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "unclassifiedPaths": {
+          "type": "array",
+          "maxItems": 5000,
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/CoverageReason" } },
+        "computedAt": { "$ref": "common.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "GuidedStoryStep": {
+      "title": "GuidedStoryStep",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order", "focusNodeIds", "caption"],
+      "properties": {
+        "order": { "type": "integer", "minimum": 0 },
+        "focusNodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        },
+        "focusEdgeIds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        },
+        "caption": { "type": "string", "minLength": 1, "maxLength": 24 },
+        "cameraHint": { "type": "string", "enum": ["fit", "focus", "overview"] }
+      }
+    },
+    "GuidedStory": {
+      "title": "GuidedStory",
+      "description": "Agent 只提交声明式讲解，不提交任何 HTML、SVG、CSS 或脚本。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "steps"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "type": { "type": "string", "enum": ["project_intro", "key_flow", "change_replay"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "steps": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/GuidedStoryStep" }
+        }
+      }
+    },
+    "AnnotationTarget": {
+      "title": "AnnotationTarget",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mapRevision"],
+      "properties": {
+        "nodeIds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        },
+        "edgeIds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        },
+        "storyId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "changeSetId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "codeLocations": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "common.schema.json#/$defs/CodeLocation" }
+        },
+        "mapRevision": { "type": "integer", "minimum": 0 },
+        "baseGitRevision": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "AnnotationMessage": {
+      "title": "AnnotationMessage",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "author", "body", "createdAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "author": { "type": "string", "enum": ["user", "agent", "system"] },
+        "body": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "detail": { "type": "string", "maxLength": 12000 },
+        "evidence": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "common.schema.json#/$defs/Evidence" }
+        },
+        "uncertain": { "type": "boolean" },
+        "createdAt": { "$ref": "common.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "AnnotationThread": {
+      "title": "AnnotationThread",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "status", "target", "messages", "createdAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "type": {
+          "type": "string",
+          "enum": ["note", "explain", "change", "risk"]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "sent",
+            "answered",
+            "resolved",
+            "write_requested",
+            "plan_proposed",
+            "approved",
+            "in_progress",
+            "rejected",
+            "cancelled",
+            "needs_clarification"
+          ]
+        },
+        "target": { "$ref": "#/$defs/AnnotationTarget" },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/AnnotationMessage" }
+        },
+        "createdAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "resolvedAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "pinned": { "type": "boolean" }
+      }
+    },
+    "WriteAccessRequest": {
+      "title": "WriteAccessRequest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "annotationId", "status", "reason", "expectedScope", "requestedAt"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "annotationId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "status": { "type": "string", "enum": ["requested", "dismissed", "converted"] },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "expectedScope": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "requestedAt": { "$ref": "common.schema.json#/$defs/Timestamp" }
+      }
+    },
+    "ChangeProposal": {
+      "title": "ChangeProposal",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "annotationId",
+        "requestId",
+        "status",
+        "summary",
+        "plannedFiles",
+        "structuralChanges",
+        "risks",
+        "validationPlan",
+        "branchKey",
+        "baseMapRevision",
+        "createdAt"
+      ],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "annotationId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "requestId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "status": {
+          "type": "string",
+          "enum": ["proposed", "approved", "rejected", "cancelled", "stale"]
+        },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "plannedFiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "structuralChanges": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        },
+        "risks": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        },
+        "validationPlan": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        },
+        "branchKey": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "baseMapRevision": { "type": "integer", "minimum": 0 },
+        "baseGitRevision": { "type": "string", "maxLength": 100 },
+        "createdAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token",
+            "approvedScope",
+            "permissionMode",
+            "approvedAt",
+            "expiresAt",
+            "branchKey",
+            "mapRevision",
+            "preexistingChanges"
+          ],
+          "properties": {
+            "token": { "$ref": "common.schema.json#/$defs/Identifier" },
+            "approvedScope": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 500,
+              "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+            },
+            "permissionMode": { "type": "string", "enum": ["enforced", "monitored"] },
+            "approvedAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+            "expiresAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+            "branchKey": { "$ref": "common.schema.json#/$defs/Identifier" },
+            "mapRevision": { "type": "integer", "minimum": 0 },
+            "gitRevision": { "type": "string", "maxLength": 100 },
+            "preexistingChanges": {
+              "type": "array",
+              "maxItems": 2000,
+              "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+            }
+          }
+        }
+      }
+    },
+    "GraphSnapshotDocument": {
+      "title": "GraphSnapshotDocument",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "workspaceId",
+        "branchKey",
+        "revision",
+        "lastEventSeq",
+        "createdAt",
+        "nodes",
+        "edges",
+        "appliedEventIds"
+      ],
+      "properties": {
+        "schemaVersion": { "$ref": "common.schema.json#/$defs/ProtocolVersion" },
+        "workspaceId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "branchKey": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "lastEventSeq": { "type": "integer", "minimum": 0 },
+        "baseGitRevision": { "type": "string", "maxLength": 100 },
+        "createdAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/GraphNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/GraphEdge" } },
+        "activeChanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ActiveChange" }
+        },
+        "stories": { "type": "array", "items": { "$ref": "#/$defs/GuidedStory" } },
+        "annotations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AnnotationThread" }
+        },
+        "writeAccessRequests": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WriteAccessRequest" }
+        },
+        "changeProposals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ChangeProposal" }
+        },
+        "completedChanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CompletedChange" }
+        },
+        "coverage": { "$ref": "#/$defs/CoverageReport" },
+        "appliedEventIds": {
+          "type": "array",
+          "description": "用于幂等的已处理事件 ID，按字典序排序。",
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        }
+      }
+    },
+    "CompletedChange": {
+      "title": "CompletedChange",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changeSetId",
+        "proposalId",
+        "status",
+        "completedAt",
+        "plannedFiles",
+        "actualFiles",
+        "diff"
+      ],
+      "properties": {
+        "changeSetId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "proposalId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "status": {
+          "type": "string",
+          "enum": ["pending_review", "accepted", "accepted_with_issues", "failed", "interrupted"]
+        },
+        "completedAt": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "plannedFiles": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "actualFiles": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+        },
+        "diff": { "$ref": "#/$defs/ChangeDiffSummary" },
+        "note": { "type": "string", "maxLength": 500 }
+      }
+    }
+  }
+}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>God View Webview E2E</title>
+    <style>
+      :root {
+        --vscode-font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        --vscode-font-size: 13px;
+        --vscode-foreground: #1f2328;
+        --vscode-descriptionForeground: #59636e;
+        --vscode-editor-background: #ffffff;
+        --vscode-editorWidget-background: #f6f8fa;
+        --vscode-sideBar-background: #f6f8fa;
+        --vscode-panel-border: #afb8c1;
+        --vscode-input-foreground: #1f2328;
+        --vscode-input-background: #ffffff;
+        --vscode-input-border: #8c959f;
+        --vscode-button-foreground: #ffffff;
+        --vscode-button-background: #0969da;
+        --vscode-button-hoverBackground: #075ebc;
+        --vscode-button-secondaryForeground: #1f2328;
+        --vscode-button-secondaryBackground: #eaeef2;
+        --vscode-textLink-foreground: #0969da;
+        --vscode-focusBorder: #0969da;
+        --vscode-charts-green: #1a7f37;
+        --vscode-charts-blue: #0969da;
+        --vscode-charts-red: #cf222e;
+      }
+    </style>
+    <link rel="stylesheet" href="/index.css" />
+  </head>
+  <body>
+    <div id="root" data-worker-src="/layout-worker.js"></div>
+    <script src="/harness.js"></script>
+    <script type="module" src="/index.js"></script>
+  </body>
+</html>

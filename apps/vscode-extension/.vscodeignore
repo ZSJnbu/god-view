@@ -1,0 +1,16 @@
+# 打包只需要 dist、media 与 manifest：
+# 源码、构建中间产物和依赖都已经打进 dist/extension.js。
+.vscode/**
+.vscode-test.mjs
+node_modules/**
+out/**
+src/**
+esbuild.mjs
+esbuild.integration.mjs
+tsconfig.json
+tsconfig.tsbuildinfo
+**/*.map
+**/*.ts
+!dist/**/*.js
+!dist/**/*.mjs
+SHA256SUMS

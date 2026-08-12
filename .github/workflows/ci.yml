@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一分支只保留最新一次运行，旧运行立即取消，避免排队浪费。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: 质量门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 协议真源是 schema/*.json，生成物必须与它一致：
+      # 有人手改生成文件或忘记重新生成时，这一步先失败。
+      - name: 校验协议生成物是最新的
+        run: pnpm run generated-files-check
+
+      - name: 质量门禁（格式、lint、类型、测试、依赖边界）
+        run: pnpm run check
+
+      - name: 覆盖率阈值
+        run: pnpm run test:coverage
+
+      - name: 上传覆盖率报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  integration:
+    name: Extension Host 集成测试 (${{ matrix.os }}, ${{ matrix.vscode }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            vscode: stable
+          - os: ubuntu-latest
+            vscode: 1.96.0
+          - os: macos-latest
+            vscode: stable
+          - os: windows-latest
+            vscode: stable
+    env:
+      GOD_VIEW_VSCODE_VERSION: ${{ matrix.vscode }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建扩展与 Webview
+        run: pnpm run build
+
+      # 这条链路（文件变化 → watcher → MapService → 事实更新）连续出现过四次
+      # 「单元测试全绿、真实链路不通」，只有真实 Extension Host 能覆盖。
+      # Linux runner 没有显示器，用 xvfb 提供虚拟 X server。
+      - name: 集成测试（Linux）
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm run test:integration
+
+      - name: 集成测试（macOS / Windows）
+        if: runner.os != 'Linux'
+        run: pnpm run test:integration
+
+  webview-e2e:
+    name: Webview E2E 与 axe
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 安装 Chromium 与系统依赖
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Webview 关键旅程与可访问性
+        run: pnpm run test:webview
+
+      - name: 上传失败证据
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/playwright/
+          retention-days: 7
+
+  build:
+    name: 构建产物
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建扩展与 Webview
+        run: pnpm run build
+
+      - name: 发布清单、bundle 预算、许可证与漏洞
+        run: |
+          node scripts/verify-release.mjs
+          pnpm audit --registry=https://registry.npmjs.org
+
+      # 打包能否成功属于发布路径的一部分，不能等到发布当天才发现。
+      - name: 打包 VSIX
+        run: pnpm --filter "./apps/vscode-extension" run package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: apps/vscode-extension/*.vsix
+          retention-days: 7

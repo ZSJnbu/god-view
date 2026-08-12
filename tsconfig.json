@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/graph-core" },
+    { "path": "./packages/validation-core" },
+    { "path": "./packages/storage" },
+    { "path": "./packages/webview-bridge" },
+    { "path": "./packages/testkit" },
+    { "path": "./apps/agent-gateway" },
+    { "path": "./apps/vscode-extension" },
+    { "path": "./apps/webview" }
+  ]
+}

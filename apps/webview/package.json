@@ -1,0 +1,22 @@
+{
+  "name": "@god-view/webview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch"
+  },
+  "dependencies": {
+    "@god-view/protocol": "workspace:*",
+    "@god-view/webview-bridge": "workspace:*",
+    "cytoscape": "^3.34.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "esbuild": "^0.28.1"
+  }
+}

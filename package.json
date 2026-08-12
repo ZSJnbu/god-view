@@ -1,0 +1,43 @@
+{
+  "name": "god-view",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "God View — 让 Agent 在写代码的同时维护项目地图的 VS Code 扩展",
+  "license": "MIT",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "generate": "pnpm --filter @god-view/protocol run generate",
+    "generated-files-check": "pnpm run generate && git diff --exit-code -- packages/protocol/src/generated",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --build --force && tsc --noEmit -p apps/webview/e2e/tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "pnpm --filter \"./apps/vscode-extension\" run test:integration",
+    "test:webview": "pnpm --filter \"./apps/webview\" run build && playwright test",
+    "test:coverage": "vitest run --coverage",
+    "release:verify": "pnpm run build && node scripts/verify-release.mjs && pnpm audit --registry=https://registry.npmjs.org",
+    "release:verify:public": "pnpm run build && node scripts/verify-release.mjs --public && pnpm audit --registry=https://registry.npmjs.org",
+    "dependency-boundary-check": "depcruise apps packages --config .dependency-cruiser.cjs",
+    "build": "pnpm --recursive --filter \"./packages/*\" run build && pnpm --filter \"./apps/webview\" run build && pnpm --filter \"./apps/agent-gateway\" run build && pnpm --filter \"./apps/vscode-extension\" run build",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run dependency-boundary-check"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.1.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "dependency-cruiser": "^18.1.1",
+    "eslint": "^10.8.0",
+    "prettier": "^3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.66.0",
+    "vitest": "^4.1.10"
+  }
+}

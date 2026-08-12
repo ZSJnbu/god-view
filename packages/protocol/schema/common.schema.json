@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.schema.json",
+  "title": "GodViewCommon",
+  "description": "God View 协议的共享定义。本文件是协议真源的一部分，TypeScript 类型由 scripts/generate-types.mts 生成。",
+  "$defs": {
+    "ProtocolVersion": {
+      "title": "ProtocolVersion",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "major.minor 协议版本。"
+    },
+    "Timestamp": {
+      "title": "Timestamp",
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 时间字符串。协议层不使用数值时间戳。"
+    },
+    "Identifier": {
+      "title": "Identifier",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "WorkspacePath": {
+      "title": "WorkspacePath",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))(?!.*:[/\\\\][/\\\\]).+$",
+      "description": "工作区相对路径。拒绝绝对路径、盘符 URI 和 .. 穿越。"
+    },
+    "CodeLocation": {
+      "title": "CodeLocation",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "$ref": "#/$defs/WorkspacePath" },
+        "startLine": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ShortNote": {
+      "title": "ShortNote",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "CompletionStatus": {
+      "title": "CompletionStatus",
+      "type": "string",
+      "enum": ["completed", "failed", "interrupted"],
+      "description": "失败或中断只结束临时预览并记录状态，已经产生的代码改动不自动回滚。"
+    },
+    "EvidenceKind": {
+      "title": "EvidenceKind",
+      "type": "string",
+      "enum": ["file_exists", "explicit_import", "git_diff", "agent_claim"],
+      "description": "证据类型。agent_claim 属于 L2 声明，不得展示为代码事实。"
+    },
+    "Evidence": {
+      "title": "Evidence",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/EvidenceKind" },
+        "location": { "$ref": "#/$defs/CodeLocation" },
+        "detail": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "ValidationLevel": {
+      "title": "ValidationLevel",
+      "type": "string",
+      "enum": ["L0", "L1", "L2", "L3"],
+      "description": "L0 文件事实、L1 显式语法、L2 Agent 声明、L3 系统推断。"
+    },
+    "ActorKind": {
+      "title": "ActorKind",
+      "type": "string",
+      "enum": ["agent", "user", "system", "unknown"]
+    },
+    "Actor": {
+      "title": "Actor",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/ActorKind" },
+        "adapterId": { "$ref": "#/$defs/Identifier" },
+        "displayName": { "type": "string", "maxLength": 100 }
+      },
+      "description": "事件来源。Adapter 无法提供可靠任务关联证据时必须使用 kind=unknown。"
+    },
+    "NodeType": {
+      "title": "NodeType",
+      "type": "string",
+      "enum": [
+        "entry",
+        "module",
+        "group",
+        "file",
+        "service",
+        "external_system",
+        "storage",
+        "unclassified"
+      ]
+    },
+    "EdgeType": {
+      "title": "EdgeType",
+      "type": "string",
+      "enum": ["depends_on", "calls", "data_flow", "contains", "reads", "writes", "publishes"]
+    },
+    "VisualHint": {
+      "title": "VisualHint",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "group": { "type": "string", "maxLength": 64 },
+        "importance": { "type": "string", "enum": ["primary", "secondary", "detail"] },
+        "preferredPosition": {
+          "type": "string",
+          "enum": ["entry", "core", "storage", "external", "auto"]
+        },
+        "icon": { "type": "string", "maxLength": 64 },
+        "collapsedByDefault": { "type": "boolean" }
+      },
+      "description": "Agent 只能给出布局建议，最终位置由布局引擎决定。"
+    }
+  }
+}

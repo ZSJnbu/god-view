@@ -1,0 +1,24 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# 只放行确实需要安装脚本的依赖：
+# - esbuild 的 postinstall 负责下载平台二进制，不放行就无法打包。
+# - @vscode/vsce-sign 下载签名二进制，vsce package 需要。
+# - keytar 需要本地编译并依赖 libsecret，只有 `vsce publish` 登录才用得到；
+#   放行会让 Linux CI 因缺系统库而装不上，因此保持禁用。
+allowBuilds:
+  '@vscode/vsce-sign': true
+  esbuild: true
+  keytar: false
+
+# 定向覆盖构建/测试工具链里的已知漏洞版本；这些包不会进入 VSIX，
+# 因此暴露面是 CI，不是用户运行时。
+#
+# 用带版本范围的选择器而不是裸包名：仓库里同时存在 ini@4 与 semver@7，
+# 一刀切会把它们降级到不兼容的主版本。
+overrides:
+  'ini@<1.3.6': '^1.3.8'
+  'semver@<5.7.2': '^5.7.2'
+  'serialize-javascript@<7.0.5': '^7.0.5'
+  'diff@>=6.0.0 <8.0.3': '^8.0.3'

@@ -1,0 +1,97 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify and package VSIX
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require a version-matching release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          manifest_version="$(node -p "require('./apps/vscode-extension/package.json').version")"
+          test "${GITHUB_REF_NAME}" = "v${manifest_version}"
+
+      - name: Generated files, quality and coverage
+        run: |
+          pnpm run generated-files-check
+          pnpm run check
+          pnpm run test:coverage
+
+      - name: Webview journeys
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm run test:webview
+
+      - name: Stable Extension Host journeys
+        run: xvfb-run -a pnpm run test:integration
+
+      - name: Release manifest, bundle budget and dependency audit
+        run: pnpm run release:verify:public
+
+      - name: Package VSIX
+        run: pnpm --filter './apps/vscode-extension' run package
+
+      - name: Record checksum
+        run: shasum -a 256 apps/vscode-extension/*.vsix | tee apps/vscode-extension/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: god-view-vsix-${{ github.run_id }}
+          path: |
+            apps/vscode-extension/*.vsix
+            apps/vscode-extension/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  cross-platform:
+    name: Extension Host smoke (${{ matrix.os }}, ${{ matrix.vscode }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            vscode: 1.96.0
+          - os: macos-latest
+            vscode: stable
+          - os: windows-latest
+            vscode: stable
+    env:
+      GOD_VIEW_VSCODE_VERSION: ${{ matrix.vscode }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm run test:integration
+      - if: runner.os != 'Linux'
+        run: pnpm run test:integration

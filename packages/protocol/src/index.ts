@@ -1,0 +1,151 @@
+/**
+ * `@god-view/protocol` 的唯一公开入口。
+ *
+ * 协议真源是 schema/*.schema.json；本包导出的类型由 scripts/generate-types.mts 生成，
+ * 禁止手写与 Schema 平行演进的重复接口（CODING_STANDARDS.md §10）。
+ */
+export type {
+  ActiveChange,
+  AnnotationAnswerEvent,
+  AnnotationAnswerPayload,
+  AnnotationCreateEvent,
+  AnnotationCreatePayload,
+  AnnotationMessage,
+  AnnotationResolveEvent,
+  AnnotationResolvePayload,
+  AnnotationTarget,
+  AnnotationThread,
+  AnswerAnnotationInput,
+  Actor,
+  ActorKind,
+  AdapterCapabilities,
+  AgentEdgeDeclaration,
+  AgentNodeDeclaration,
+  BeginChangeInput,
+  ChangeCompleteEvent,
+  ChangeCompletePayload,
+  ChangeStartEvent,
+  ChangeStartPayload,
+  ChangeApprovedEvent,
+  ChangeApprovedPayload,
+  ChangeRejectedEvent,
+  ChangeRejectedPayload,
+  ChangeObservedEvent,
+  ChangeObservedPayload,
+  ChangeReviewedEvent,
+  ChangeReviewedPayload,
+  ChangeDiffSummary,
+  DiffFile,
+  ChangeProposal,
+  ChangeProposalEvent,
+  ChangeProposalPayload,
+  CodeLocation,
+  CodeValidationState,
+  CodeValidationStatus,
+  CompleteChangeInput,
+  CompletionStatus,
+  CompletedChange,
+  CoverageReason,
+  CoverageReport,
+  DriftFinding,
+  DriftKind,
+  EdgeRemoveEvent,
+  EdgeRemovePayload,
+  EdgeType,
+  EdgeUpsertEvent,
+  EdgeUpsertPayload,
+  EventEnvelope,
+  Evidence,
+  EvidenceKind,
+  GetMapInput,
+  GetMapResult,
+  GodViewEvent,
+  GraphEdge,
+  GraphNode,
+  GraphSnapshotDocument,
+  GuidedStory,
+  GuidedStoryStep,
+  Identifier,
+  LifecycleState,
+  NodeRemoveEvent,
+  NodeRemovePayload,
+  NodeType,
+  NodeUpsertEvent,
+  NodeUpsertPayload,
+  Provenance,
+  ProtocolVersion,
+  RemoveEntityInput,
+  ProposeChangeInput,
+  RequestWriteAccessInput,
+  StartApprovedChangeInput,
+  ReservedEvent,
+  ReservedEventType,
+  SessionEndEvent,
+  SessionEndPayload,
+  StoryUpsertEvent,
+  StoryUpsertPayload,
+  SessionScopedInput,
+  SessionStartEvent,
+  SessionStartPayload,
+  ShortNote,
+  SourceKind,
+  Timestamp,
+  ToolError,
+  ToolResult,
+  UpsertEdgeInput,
+  UpsertNodeInput,
+  UpsertStoryInput,
+  UserConfirmationState,
+  ValidationLevel,
+  VisualHint,
+  WorkspacePath,
+  WriteAccessRequest,
+  WriteAccessRequestedEvent,
+  WriteAccessRequestedPayload,
+} from './generated/protocol-types.js';
+
+export { runtimeSchemas } from './generated/schemas.js';
+export { toolInputSchemas } from './generated/tool-schemas.js';
+
+export { errorCodes, protocolError } from './error-codes.js';
+export type { ErrorCode, ProtocolError } from './error-codes.js';
+
+export { assertNever, err, isOk, ok } from './result.js';
+export type { Result } from './result.js';
+
+export {
+  noGitBranchKey,
+  parseBranchKey,
+  parseChangeSetId,
+  parseEdgeId,
+  parseEventId,
+  parseNodeId,
+  parseSessionId,
+  parseWorkspaceId,
+} from './ids.js';
+export type {
+  BranchKey,
+  ChangeSetId,
+  EdgeId,
+  EventId,
+  NodeId,
+  SessionId,
+  WorkspaceId,
+} from './ids.js';
+
+export {
+  currentProtocolVersion,
+  isProtocolVersionSupported,
+  negotiateProtocolVersion,
+  parseProtocolVersion,
+  supportedMinorRange,
+} from './version.js';
+
+export { createProtocolValidator, reservedEventTypes, supportedEventTypes } from './validate.js';
+export type {
+  ProtocolValidator,
+  ReservedEventTypeName,
+  SupportedEventType,
+  ToolInputByName,
+  ToolName,
+} from './validate.js';

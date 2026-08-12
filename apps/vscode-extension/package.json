@@ -1,0 +1,159 @@
+{
+  "name": "god-view",
+  "displayName": "God View",
+  "description": "让 Agent 在写代码的同时维护项目地图，让开发者实时看见项目如何被构建。",
+  "version": "0.2.0",
+  "publisher": "god-view",
+  "license": "MIT",
+  "icon": "media/god-view.png",
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/zsjfj/god_view.git"
+  },
+  "homepage": "https://gitee.com/zsjfj/god_view",
+  "bugs": {
+    "url": "https://gitee.com/zsjfj/god_view/issues"
+  },
+  "engines": {
+    "vscode": "^1.96.0",
+    "node": ">=22.12.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "architecture",
+    "codex",
+    "claude",
+    "mcp",
+    "visualization"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:.godview/session.json"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "God View 会启动本地 Gateway、Agent CLI 和只读 Git 子进程；请仅在你信任的代码工作区中启用。"
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "God View 需要本地文件监听、Git 和工作区级 .godview 会话文件。"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "godView.openProjectMap",
+        "title": "God View: Open Project Map",
+        "category": "God View"
+      },
+      {
+        "command": "godView.revealInGodView",
+        "title": "Reveal in God View",
+        "category": "God View"
+      },
+      {
+        "command": "godView.generateAgentTask",
+        "title": "God View: Generate Agent Task",
+        "category": "God View"
+      },
+      {
+        "command": "godView.copyAgentSetup",
+        "title": "God View: Copy Agent Setup",
+        "category": "God View"
+      },
+      {
+        "command": "godView.configureAgent",
+        "title": "God View: Configure Agent MCP",
+        "category": "God View"
+      },
+      {
+        "command": "godView.showAgentAdapters",
+        "title": "God View: Show Agent Adapters",
+        "category": "God View"
+      },
+      {
+        "command": "godView.showDiagnostics",
+        "title": "God View: Show Diagnostics",
+        "category": "God View"
+      },
+      {
+        "command": "godView.clearWorkspaceData",
+        "title": "God View: Clear Current Workspace Data",
+        "category": "God View"
+      },
+      {
+        "command": "godView.exportMapSnapshot",
+        "title": "God View: Export Current Map Snapshot",
+        "category": "God View"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "godView.revealInGodView",
+          "group": "navigation@9",
+          "when": "editorTextFocus"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "godView",
+          "title": "God View",
+          "icon": "media/god-view.svg"
+        }
+      ]
+    },
+    "views": {
+      "godView": [
+        {
+          "id": "godView.structure",
+          "name": "项目结构"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "God View",
+      "properties": {
+        "godView.exclude": {
+          "type": "array",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "额外排除的 glob。`.git`、依赖目录、虚拟环境、vendor、缓存和构建输出已默认排除，无需重复配置。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "package": "vsce package --no-dependencies --allow-missing-repository",
+    "build:integration": "node esbuild.integration.mjs",
+    "test:integration": "node esbuild.integration.mjs && vscode-test"
+  },
+  "dependencies": {
+    "@god-view/graph-core": "workspace:*",
+    "@god-view/protocol": "workspace:*",
+    "@god-view/storage": "workspace:*",
+    "@god-view/validation-core": "workspace:*",
+    "@god-view/webview-bridge": "workspace:*"
+  },
+  "devDependencies": {
+    "@god-view/testkit": "workspace:*",
+    "@types/mocha": "^10.0.10",
+    "@types/vscode": "^1.96.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1"
+  }
+}

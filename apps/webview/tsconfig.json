@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "out",
+    // Webview 运行在浏览器环境：只暴露 DOM 与 Worker，不暴露 Node 内置模块。
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "references": [{ "path": "../../packages/protocol" }, { "path": "../../packages/webview-bridge" }]
+}

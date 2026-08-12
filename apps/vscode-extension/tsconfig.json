@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "out",
+    "lib": ["ES2023"],
+    "types": ["node", "vscode", "mocha"],
+    // 扩展由 esbuild 打包成单个 CJS 文件交给 Extension Host，
+    // 因此按打包器语义解析模块，而不是按 Node 的 CJS/ESM 规则。
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  },
+  "include": ["src/**/*.ts", "integration/**/*.ts"],
+  "references": [
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/graph-core" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/validation-core" },
+    { "path": "../../packages/webview-bridge" }
+  ]
+}
