@@ -19,7 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "pnpm --filter \"./apps/vscode-extension\" run test:integration",
-    "test:webview": "pnpm --filter \"./apps/webview\" run build && playwright test",
+    "test:webview": "pnpm --filter \"@god-view/webview...\" run build && playwright test",
     "test:coverage": "vitest run --coverage",
     "release:verify": "pnpm run build && node scripts/verify-release.mjs && pnpm audit --registry=https://registry.npmjs.org",
     "release:verify:public": "pnpm run build && node scripts/verify-release.mjs --public && pnpm audit --registry=https://registry.npmjs.org",

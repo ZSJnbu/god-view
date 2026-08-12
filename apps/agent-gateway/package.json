@@ -18,7 +18,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc --build"
+    "build": "tsc --build --force"
   },
   "dependencies": {
     "@god-view/protocol": "workspace:*",

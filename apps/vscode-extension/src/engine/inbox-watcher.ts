@@ -20,6 +20,7 @@ export class InboxWatcher implements Disposable {
   readonly #logger: Logger;
   readonly #onEvent: (delivery: InboxDelivery) => Promise<void>;
   #watcher: FileSystemWatcher | undefined;
+  #poller: ReturnType<typeof setInterval> | undefined;
   /** 处理串行化：单写者模型不允许并发归约同一张地图。 */
   #queue: Promise<void> = Promise.resolve();
 
@@ -47,6 +48,11 @@ export class InboxWatcher implements Disposable {
     });
     this.#watcher = watcher;
     await this.drain();
+    // 某些旧版 Extension Host/文件系统后端会漏掉创建事件。周期扫描是可靠性兜底：
+    // eventId 幂等与串行队列保证 watcher 和扫描同时命中不会重复归约。
+    this.#poller = setInterval(() => {
+      void this.drain();
+    }, 1000);
   }
 
   /** 处理启动前已经堆积的事件文件。 */
@@ -120,6 +126,8 @@ export class InboxWatcher implements Disposable {
   }
 
   dispose(): void {
+    if (this.#poller !== undefined) clearInterval(this.#poller);
+    this.#poller = undefined;
     this.#watcher?.dispose();
     this.#watcher = undefined;
   }

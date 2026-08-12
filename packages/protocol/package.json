@@ -17,7 +17,7 @@
     "schema"
   ],
   "scripts": {
-    "build": "tsc --build",
+    "build": "tsc --build --force",
     "generate": "node scripts/generate-types.mts"
   },
   "dependencies": {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Uri, workspace } from 'vscode';
 import type { Identifier } from '@god-view/protocol';
+import { isFsPathWithinRoot } from './path-boundary.js';
 
 export interface WorkspaceIdentity {
   readonly id: Identifier;
@@ -42,6 +43,7 @@ export function resolveWorkspacePath(root: Uri, relativePath: string): Uri | und
     return undefined;
   }
   const candidate = Uri.joinPath(root, normalized);
-  const rootPath = root.fsPath.endsWith('/') ? root.fsPath : `${root.fsPath}/`;
-  return candidate.fsPath.startsWith(rootPath) ? candidate : undefined;
+  // Windows 的 `Uri`/文件系统会把盘符大小写规范化为不同形态（`d:`/`D:`）。
+  // 路径逃逸判断必须遵循平台大小写语义，否则合法工作区文件会被误判为工作区外。
+  return isFsPathWithinRoot(root.fsPath, candidate.fsPath) ? candidate : undefined;
 }
