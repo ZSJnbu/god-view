@@ -13,13 +13,13 @@
 | Official npm registry audit                           | No known vulnerabilities found                                     |
 | 5,000 / 10,000 entity pure projection-layout budgets  | Pass; see `PERFORMANCE_RESULTS.md`                                 |
 | Build                                                 | Pass                                                               |
-| VSIX package                                          | 15 files, 437.05 KB                                                |
+| VSIX package                                          | 15 files, 437.20 KB                                                |
 | Bundled Gateway `--help`                              | Pass                                                               |
 | Clean-profile VSIX install                            | `god-view.god-view@0.2.0` installed successfully                   |
 | Local 0.1.0 → 0.2.0 install and uninstall             | Pass                                                               |
 | Production license allowlist                          | MIT, ISC, BSD-2-Clause, BSD-3-Clause only                          |
 
-VSIX SHA-256: `de43fd54215c6e63a43c68aacce2b83aec7b1c71cfbcac0e98b6330f468d12e8`.
+VSIX SHA-256: `bd9fa0963aa52c5786361c5730426ef12e09f9b8743813a90c67b23b3726aaf0`.
 
 The final VSIX contains the manifest, README, changelog, privacy/security/license documents,
 compiled extension, compiled Webview, layout worker, bundled Gateway and icon. It contains no
