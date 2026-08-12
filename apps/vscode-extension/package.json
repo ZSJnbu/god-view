@@ -3,7 +3,7 @@
   "displayName": "God View",
   "description": "让 Agent 在写代码的同时维护项目地图，让开发者实时看见项目如何被构建。",
   "version": "0.2.0",
-  "publisher": "god-view",
+  "publisher": "ZengShaoJie",
   "license": "MIT",
   "icon": "media/god-view.png",
   "repository": {

@@ -8,8 +8,8 @@ repository and publisher ownership that code cannot choose on the owner's behalf
 1. The primary source repository is `https://gitee.com/zsjfj/god_view.git`. Make the first reviewed
    commit there; do not tag uncommitted files. If GitHub Actions is used for release evidence, configure
    a GitHub mirror and keep tag SHAs identical instead of treating two diverging repositories as proof.
-2. Create or confirm the VS Code Marketplace publisher. Replace the placeholder `publisher` in
-   `apps/vscode-extension/package.json` if the owned publisher ID is not exactly `god-view`.
+2. The confirmed VS Code Marketplace Publisher ID is `ZengShaoJie` (case-sensitive), and the extension
+   manifest uses it. Reconfirm publisher ownership before rotating or replacing the publishing token.
 3. The extension manifest uses the Gitee repository, homepage and issues URLs. Verify they remain
    public and reachable before Marketplace upload; the public release verifier fails if they are removed.
 4. In the GitHub Actions mirror, create an Environment named `marketplace`, require a human reviewer, and store the

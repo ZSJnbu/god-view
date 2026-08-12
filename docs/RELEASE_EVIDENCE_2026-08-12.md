@@ -13,13 +13,13 @@
 | Official npm registry audit                           | No known vulnerabilities found                                     |
 | 5,000 / 10,000 entity pure projection-layout budgets  | Pass; see `PERFORMANCE_RESULTS.md`                                 |
 | Build                                                 | Pass                                                               |
-| VSIX package                                          | 15 files, 437.20 KB                                                |
+| VSIX package                                          | 15 files, 437.22 KB                                                |
 | Bundled Gateway `--help`                              | Pass                                                               |
 | Clean-profile VSIX install                            | `god-view.god-view@0.2.0` installed successfully                   |
 | Local 0.1.0 → 0.2.0 install and uninstall             | Pass                                                               |
 | Production license allowlist                          | MIT, ISC, BSD-2-Clause, BSD-3-Clause only                          |
 
-VSIX SHA-256: `bd9fa0963aa52c5786361c5730426ef12e09f9b8743813a90c67b23b3726aaf0`.
+VSIX SHA-256: `1e3243ec4b5ea4ddfb4afaad800e2eb0d2ecf88fd93c58d355f42482a09d55bb`.
 
 The final VSIX contains the manifest, README, changelog, privacy/security/license documents,
 compiled extension, compiled Webview, layout worker, bundled Gateway and icon. It contains no
@@ -73,7 +73,7 @@ be reliably attributed to a particular Agent without host-provided task identity
 | **Total**                     | **92 / 100** | Local quality level A                                                                                     |
 
 Local hard gates pass with no known P0/P1 defects and no quality waiver. Public Marketplace release
-is **not yet authorized** because the exact commit has no cross-platform CI result and the confirmed
-Marketplace publisher/publishing credential are still missing. The primary Gitee repository URL is now
-known, but a GitHub Actions mirror or equivalent Gitee pipeline must produce the checked-in matrix evidence.
-Those are ownership/evidence gates, not implementation defects.
+is **not yet authorized** because the exact commit has no cross-platform CI result and the Marketplace
+publishing credential is still missing. Publisher ownership is confirmed as `ZengShaoJie`. The primary
+Gitee repository URL is known, but a GitHub Actions mirror or equivalent Gitee pipeline must produce the
+checked-in matrix evidence. Those are ownership/evidence gates, not implementation defects.
