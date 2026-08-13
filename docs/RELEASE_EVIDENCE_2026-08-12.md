@@ -1,5 +1,54 @@
 # Local release evidence — 2026-08-12
 
+## 0.3.2 candidate addendum
+
+The 0.3.2 candidate addresses an abandoned ChangeSet left by the original false-success run. The
+published CRM map contained one active ChangeSet from 2026-08-12T07:31:36Z with no planned files,
+touched nodes or touched edges. It was ended through the public `complete_change(interrupted)` MCP
+tool, advancing the map from revision 1 to 2 without changing source or graph entities. A subsequent
+`begin_change` / `complete_change(interrupted)` smoke advanced revisions 2 → 4 and proved the
+single-writer lease was available again.
+
+`get_map` now returns `activeChanges`, initialization guidance requires user confirmation before
+interrupting one, and the progress panel preserves the Agent's structured domain failure detail.
+
+## 0.3.1 candidate addendum
+
+The 0.3.1 candidate fixes non-interactive Codex MCP calls being cancelled before reaching the
+Gateway. The root cause was missing MCP-standard tool annotations: prose descriptions said `get_map`
+was read-only, but Codex requires machine-readable `readOnlyHint`, `destructiveHint`,
+`idempotentHint` and `openWorldHint` metadata to make its approval decision.
+
+With the same Codex CLI 0.146.1 and target CRM workspace, the old bundled Gateway cancelled two
+`get_map` calls at zero duration. Pointing that same command at the annotated candidate Gateway
+returned revision 1, branch `staging` and zero nodes. A real `begin_change` smoke against an isolated
+fixture also reached the Gateway and returned the expected acknowledgement timeout because no
+Extension Host was attached, proving Codex no longer cancelled the write tool. The temporary fixture
+session, map and inbox event were removed after the smoke.
+
+## 0.3.0 candidate addendum
+
+The 0.3.0 candidate fixes the false-success path observed in a real Codex initialization: Gateway
+tool calls no longer treat inbox delivery as reducer acceptance. The Gateway waits for an Extension
+Host acknowledgement, returns the reducer-issued `changeSetId`, propagates reducer rejection, and
+times out explicitly when the Extension Host cannot confirm the event.
+
+Local 0.3.0 gates passed with 50 test files / 609 unit tests, 9 / 9 Chromium journeys and 12 / 12
+real Extension Host journeys. Coverage was 96.63% statements, 91.53% branches, 95.26% functions and
+96.85% lines. Public release verification passed the 255,957-byte Webview gzip budget, production
+license allowlist and official npm vulnerability audit. The packaged VSIX contains 15 files and is
+444.33 KB; an isolated VS Code profile installed it as `zengshaojie.god-view@0.3.0`, and the bundled
+Gateway `--help` smoke passed.
+
+VSIX SHA-256: `8036f1c063767fbddba9c5bf30037c8741be0973c5513bf4d652a4a0d7274666`.
+
+Automatic first-map initialization now starts a new constrained Codex or Claude subprocess, streams
+bounded progress, supports structured user choices and cancellation, and requires a structured final
+`get_map` result. It cannot attach to another already-open Agent UI session. Claude argument parsing
+was smoke-tested with local Claude Code 2.1.228 (authentication was not available in that profile),
+and Codex CLI 0.146.1 help was used to lock the current read-only invocation syntax. A full installed-
+VSIX, logged-in Agent run against a disposable project remains the final manual release smoke.
+
 ## Automated results
 
 | Gate                                                  | Result                                                             |

@@ -68,6 +68,35 @@ after reviewing the repository. Do not bypass this boundary merely to make God V
 The extension never silently rewrites a conflicting same-name configuration; replacement needs an
 additional user confirmation.
 
+### 0.2.0 → 0.3.0
+
+Version 0.3.0 can start a new constrained Codex or Claude CLI subprocess from the empty-map panel,
+stream progress, collect a structured user choice, resume that same subprocess session and cancel it.
+It cannot attach to an unrelated Agent UI session that was already open. Codex automatic runs use a
+read-only sandbox; Claude automatic runs allow repository reads and God View MCP tools while denying
+Bash and file-editing tools.
+
+The Gateway now waits for an acknowledgement from the Extension Host reducer before reporting an
+event as accepted. `begin_change` returns the reducer-issued `changeSetId`; clients must use that exact
+value and must not synthesize one. After installing 0.3.0, reload VS Code and reconfigure the Agent so
+the MCP process uses the bundled 0.3.0 Gateway. Old Gateway processes cannot gain acknowledgement
+semantics without being restarted.
+
+### 0.3.0 → 0.3.1
+
+Version 0.3.1 adds MCP-standard safety annotations to the bundled Gateway. Without these annotations,
+Codex CLI 0.146.1 treated even `get_map` as requiring an interactive MCP approval and immediately
+reported `user cancelled MCP tool call` when launched through non-interactive `codex exec`. Reload VS
+Code after installation, run **God View: Configure Agent MCP** again, and restart any old Agent/MCP
+processes so they load the 0.3.1 Gateway.
+
+### 0.3.1 → 0.3.2
+
+Version 0.3.2 exposes active ChangeSet summaries through `get_map`. This lets a restarted Agent name
+the existing lease and ask the user before ending it, rather than retrying `begin_change` against an
+invisible `CONCURRENT_CHANGE_SET`. The automatic-run panel also displays the structured domain failure
+reason instead of suggesting an authentication failure when login is healthy.
+
 After any upgrade:
 
 1. Run **God View: Show Diagnostics** and require `runtimeGateway=ready` with the installed
