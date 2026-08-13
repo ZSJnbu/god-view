@@ -168,6 +168,7 @@ describe('修改方案与批准状态机', () => {
       permissionMode: 'monitored',
       preexistingChanges: ['src/user-work.ts'],
     });
+    expect(started.annotations.get('annotation.change')?.status).toBe('in_progress');
   });
 
   it('严格区分角色，并拒绝扩大请求或批准范围', () => {
@@ -531,6 +532,7 @@ describe('修改方案与批准状态机', () => {
       event('change_reviewed', { changeSetId: 'change.review', status: 'accepted' }, 'user'),
     );
     expect(accepted.completedChanges.get('change.review')?.status).toBe('accepted');
+    expect(accepted.annotations.get('annotation.change')?.status).toBe('resolved');
     const document = toSnapshotDocument(accepted);
     expect(toSnapshotDocument(fromSnapshotDocument(document))).toEqual(document);
     expect(

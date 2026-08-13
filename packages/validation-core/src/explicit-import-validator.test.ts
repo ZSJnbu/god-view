@@ -85,4 +85,16 @@ describe('TypeScript/JavaScript 显式 import 校验', () => {
     ).validate(edge(), { checkedAt });
     expect(result.ok && result.value.status).toBe('drifted');
   });
+
+  it('识别 @/ 映射到 src/ 的项目内部 import', async () => {
+    const result = await new ExplicitImportValidator(
+      probe({
+        'src/orders/index.ts': "import { pay } from '@/payment';",
+        'src/payment/index.ts': 'export const pay = 1;',
+      }),
+    ).validate(edge(), { checkedAt });
+
+    expect(result.ok && result.value.status).toBe('verified');
+    if (result.ok) expect(result.value.evidence[0]?.detail).toContain('@/payment → src/payment');
+  });
 });

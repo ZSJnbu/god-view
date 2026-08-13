@@ -56,6 +56,31 @@ describe('Webview 命令解析', () => {
     }
   });
 
+  it('只接受安全范围内的 Agent 输出视窗高度', () => {
+    expect(parseWebviewCommand({ type: 'saveAgentPaneHeight', height: 320 })).toEqual({
+      ok: true,
+      value: { type: 'saveAgentPaneHeight', height: 320 },
+    });
+    expect(parseWebviewCommand({ type: 'saveAgentPaneHeight', height: 80 }).ok).toBe(false);
+    expect(parseWebviewCommand({ type: 'saveAgentPaneHeight', height: Number.NaN }).ok).toBe(false);
+  });
+
+  it('接受对话导出与安全的浮窗偏好', () => {
+    expect(parseWebviewCommand({ type: 'exportAgentConversation' }).ok).toBe(true);
+    expect(
+      parseWebviewCommand({
+        type: 'saveAgentPaneView',
+        view: { mode: 'floating', floatingBounds: { x: 20, y: 30, width: 640, height: 420 } },
+      }),
+    ).toMatchObject({ ok: true, value: { type: 'saveAgentPaneView' } });
+    expect(
+      parseWebviewCommand({
+        type: 'saveAgentPaneView',
+        view: { mode: 'floating', floatingBounds: { x: 0, y: 0, width: 200, height: 100 } },
+      }).ok,
+    ).toBe(false);
+  });
+
   it('接受受限的标注创建、解决和复制任务命令', () => {
     const create = parseWebviewCommand({
       type: 'createAnnotation',
@@ -79,6 +104,7 @@ describe('Webview 命令解析', () => {
         type: 'approveProposal',
         proposalId: 'proposal.orders',
         approvedScope: ['src/orders.ts'],
+        autoStartAgent: 'codex',
       }),
     ).toMatchObject({
       ok: true,
@@ -86,6 +112,7 @@ describe('Webview 命令解析', () => {
         type: 'approveProposal',
         proposalId: 'proposal.orders',
         approvedScope: ['src/orders.ts'],
+        autoStartAgent: 'codex',
       },
     });
     expect(
@@ -94,6 +121,13 @@ describe('Webview 命令解析', () => {
     expect(
       parseWebviewCommand({ type: 'copyApprovedChangeTask', proposalId: 'proposal.orders' }),
     ).toMatchObject({ ok: true, value: { type: 'copyApprovedChangeTask' } });
+    expect(
+      parseWebviewCommand({
+        type: 'startApprovedChange',
+        proposalId: 'proposal.orders',
+        agent: 'claude-code',
+      }),
+    ).toMatchObject({ ok: true, value: { type: 'startApprovedChange' } });
   });
 
   it.each([
@@ -140,6 +174,65 @@ describe('Webview 命令解析', () => {
       value: { type: 'configureAgent', agent: 'claude-code' },
     });
     expect(parseWebviewCommand({ type: 'configureAgent', agent: 'unknown' }).ok).toBe(false);
+  });
+
+  it('接受 Agent 刷新、启动、回答与取消命令', () => {
+    expect(parseWebviewCommand({ type: 'refreshAgentStatus' }).ok).toBe(true);
+    expect(parseWebviewCommand({ type: 'startInitialization', agent: 'codex' }).ok).toBe(true);
+    expect(parseWebviewCommand({ type: 'startReinitialization', agent: 'claude-code' }).ok).toBe(
+      true,
+    );
+    expect(
+      parseWebviewCommand({ type: 'startMapCompletion', agent: 'codex', target: 'files' }).ok,
+    ).toBe(true);
+    expect(
+      parseWebviewCommand({
+        type: 'startAnnotationAnswer',
+        annotationId: 'annotation.orders',
+        agent: 'codex',
+      }).ok,
+    ).toBe(true);
+    expect(
+      parseWebviewCommand({ type: 'startMapCompletion', agent: 'codex', target: 'unknown' }).ok,
+    ).toBe(false);
+    expect(
+      parseWebviewCommand({ type: 'answerAgentQuestion', runId: 'run-1', answer: 'recommended' })
+        .ok,
+    ).toBe(true);
+    expect(parseWebviewCommand({ type: 'cancelAgentRun', runId: 'run-1' }).ok).toBe(true);
+    expect(parseWebviewCommand({ type: 'startInitialization', agent: 'other' }).ok).toBe(false);
+    expect(parseWebviewCommand({ type: 'startReinitialization', agent: 'other' }).ok).toBe(false);
+    expect(parseWebviewCommand({ type: 'answerAgentQuestion', runId: '', answer: 'x' }).ok).toBe(
+      false,
+    );
+  });
+
+  it('接受常驻项目对话，并区分只读聊天与受控修改请求', () => {
+    expect(
+      parseWebviewCommand({
+        type: 'sendAgentMessage',
+        agent: 'codex',
+        message: '解释订单数据流',
+        mode: 'chat',
+      }),
+    ).toMatchObject({ ok: true, value: { type: 'sendAgentMessage', mode: 'chat' } });
+    expect(
+      parseWebviewCommand({
+        type: 'sendAgentMessage',
+        agent: 'claude-code',
+        message: '增加重试',
+        mode: 'change',
+        nodeIds: ['module.orders'],
+      }),
+    ).toMatchObject({ ok: true, value: { mode: 'change', nodeIds: ['module.orders'] } });
+    expect(
+      parseWebviewCommand({
+        type: 'sendAgentMessage',
+        agent: 'codex',
+        message: '',
+        mode: 'chat',
+      }).ok,
+    ).toBe(false);
   });
 
   it.each([

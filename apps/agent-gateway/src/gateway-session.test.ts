@@ -24,6 +24,17 @@ function createSession(): GatewaySession {
   });
 }
 
+function createConfirmedSession(): GatewaySession {
+  return new GatewaySession({
+    workspaceRoot,
+    workspaceId,
+    branchKey,
+    now,
+    adapterId: 'claude-code',
+    acknowledgementTimeoutMs: 2_000,
+  });
+}
+
 async function readInbox(): Promise<GodViewEvent[]> {
   const layout = resolveWorkspaceRuntime(workspaceRoot);
   let names: string[];
@@ -39,6 +50,21 @@ async function readInbox(): Promise<GodViewEvent[]> {
     events.push(JSON.parse(contents) as GodViewEvent);
   }
   return events;
+}
+
+async function waitForInbox(): Promise<GodViewEvent[]> {
+  for (let attempts = 0; attempts < 40; attempts += 1) {
+    const events = await readInbox();
+    if (events.length > 0) return events;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  return [];
+}
+
+async function acknowledge(eventId: string, result: unknown): Promise<void> {
+  const directory = resolveWorkspaceRuntime(workspaceRoot).acknowledgementsDir;
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${eventId}.json`), JSON.stringify(result), 'utf8');
 }
 
 async function publishMap(document: Partial<GraphSnapshotDocument>): Promise<void> {
@@ -151,12 +177,84 @@ describe('事件投递', () => {
       intent: '拆分订单与支付',
     });
     expect(result.accepted).toBe(true);
+    expect(result.changeSetId).toBe(result.eventId);
 
     const [event] = await readInbox();
     expect(event?.type).toBe('change_start');
     if (event?.type === 'change_start') {
       expect(event.payload.changeSetId).toBe(event.eventId);
     }
+  });
+
+  it('等待扩展确认后返回实际 revision 与 changeSetId', async () => {
+    const confirmed = createConfirmedSession();
+    const pending = confirmed.beginChange({
+      sessionId: 's-ack',
+      idempotencyKey: 'begin',
+      intent: '建立首版地图',
+    });
+    const [event] = await waitForInbox();
+    expect(event?.type).toBe('change_start');
+    await acknowledge(event?.eventId ?? 'missing', {
+      accepted: true,
+      mapRevision: 1,
+      eventId: event?.eventId,
+      errors: [],
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      accepted: true,
+      mapRevision: 1,
+      eventId: event?.eventId,
+      changeSetId: event?.eventId,
+    });
+  });
+
+  it('扩展领域层拒绝未知 ChangeSet 时不再向 Agent 假报成功', async () => {
+    const confirmed = createConfirmedSession();
+    const pending = confirmed.upsertNode({
+      sessionId: 's-ack',
+      idempotencyKey: 'node',
+      changeSetId: 'missing-change',
+      node: validNode,
+    });
+    const [event] = await waitForInbox();
+    await acknowledge(event?.eventId ?? 'missing', {
+      accepted: false,
+      mapRevision: 0,
+      eventId: event?.eventId,
+      errors: [{ code: errorCodes.UNKNOWN_CHANGE_SET, message: '变更不存在或已结束' }],
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      accepted: false,
+      errors: [{ code: errorCodes.UNKNOWN_CHANGE_SET }],
+    });
+  });
+
+  it('确认模式重试同一事件时不复用旧回执', async () => {
+    const confirmed = createConfirmedSession();
+    await acknowledge('s-ack.node', {
+      accepted: true,
+      mapRevision: 99,
+      eventId: 's-ack.node',
+      errors: [],
+    });
+    const pending = confirmed.upsertNode({
+      sessionId: 's-ack',
+      idempotencyKey: 'node',
+      node: validNode,
+    });
+    const [event] = await waitForInbox();
+    await new Promise<void>((resolve) => setTimeout(resolve, 75));
+    await acknowledge(event?.eventId ?? 'missing', {
+      accepted: true,
+      mapRevision: 1,
+      eventId: event?.eventId,
+      errors: [],
+    });
+
+    await expect(pending).resolves.toMatchObject({ accepted: true, mapRevision: 1 });
   });
 
   it('remove_node 与 remove_edge 使用同一入参但产生不同事件', async () => {
@@ -415,6 +513,28 @@ describe('读取地图', () => {
     });
     const result = await session.getMap({});
     expect(result).toMatchObject({ writeAccessRequests: [{ id: 'request.orders' }] });
+  });
+
+  it('读取地图时返回活动 ChangeSet，使 Agent 能解释占用并请求中断确认', async () => {
+    await publishMap({
+      activeChanges: [
+        {
+          changeSetId: 'change.active',
+          sessionId: 'session.old',
+          intent: '旧的首次建图任务',
+          startedAt: now(),
+          plannedFiles: [],
+          touchedNodeIds: [],
+          touchedEdgeIds: [],
+        },
+      ],
+    });
+
+    const result = await session.getMap({});
+
+    expect(result).toMatchObject({
+      activeChanges: [{ changeSetId: 'change.active', sessionId: 'session.old' }],
+    });
   });
 
   it('损坏的读模型退化为空地图，不抛出异常', async () => {

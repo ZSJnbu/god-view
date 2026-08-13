@@ -221,6 +221,21 @@ describe('边界值', () => {
 });
 
 describe('工具入参校验', () => {
+  it('校验扩展返回的领域确认结果及 begin_change 的 changeSetId', () => {
+    expect(
+      validator.validateToolResult({
+        accepted: true,
+        mapRevision: 1,
+        eventId: 'event-1',
+        changeSetId: 'change-1',
+        errors: [],
+      }).ok,
+    ).toBe(true);
+    expect(validator.validateToolResult({ accepted: true, mapRevision: -1, errors: [] }).ok).toBe(
+      false,
+    );
+  });
+
   it('接受合法的 upsert_node 入参', () => {
     const result = validator.validateToolInput('upsert_node', {
       sessionId: 'session-1',

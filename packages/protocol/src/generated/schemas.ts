@@ -2421,6 +2421,18 @@ export const graphSchema: SchemaObject = {
             "$ref": "common.schema.json#/$defs/WorkspacePath"
           }
         },
+        "touchedNodeIds": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Identifier"
+          }
+        },
+        "touchedEdgeIds": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Identifier"
+          }
+        },
         "diff": {
           "$ref": "#/$defs/ChangeDiffSummary"
         },
@@ -2480,6 +2492,9 @@ export const toolsSchema: SchemaObject = {
           "minimum": 0
         },
         "eventId": {
+          "$ref": "common.schema.json#/$defs/Identifier"
+        },
+        "changeSetId": {
           "$ref": "common.schema.json#/$defs/Identifier"
         },
         "errors": {
@@ -2590,6 +2605,12 @@ export const toolsSchema: SchemaObject = {
           "type": "array",
           "items": {
             "$ref": "graph.schema.json#/$defs/ChangeProposal"
+          }
+        },
+        "activeChanges": {
+          "type": "array",
+          "items": {
+            "$ref": "graph.schema.json#/$defs/ActiveChange"
           }
         },
         "coverage": {

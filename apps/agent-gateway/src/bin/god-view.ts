@@ -80,6 +80,7 @@ async function createSession(
     // eslint-disable-next-line no-restricted-syntax -- CLI 组合根：系统时间进入应用的唯一入口
     now: () => new Date().toISOString(),
     adapterId: adapter.actorAdapterId,
+    acknowledgementTimeoutMs: 15_000,
   });
 }
 

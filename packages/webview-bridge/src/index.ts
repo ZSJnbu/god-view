@@ -4,6 +4,15 @@
  * 回答一个问题：**扩展与 Webview 之间允许交换哪些消息，如何在边界解析它们。**
  */
 export type {
+  AgentConfigurationView,
+  AgentConversationMessage,
+  AgentConversationView,
+  AgentFloatingBounds,
+  AgentPaneView,
+  AgentQuestion,
+  AgentQuestionOption,
+  AgentRunView,
+  ConfigurableAgent,
   ExtensionEvent,
   ExtensionEventType,
   MapPatch,

@@ -94,6 +94,31 @@ describe('工具清单', () => {
       expect(tool.description ?? '').not.toBe('');
     }
   });
+
+  it('用 MCP 标准注解区分只读、非破坏性写图与删除操作', async () => {
+    const { tools } = await client.listTools();
+    const getMap = tools.find((tool) => tool.name === 'get_map');
+    const upsertNode = tools.find((tool) => tool.name === 'upsert_node');
+    const removeNode = tools.find((tool) => tool.name === 'remove_node');
+
+    expect(getMap?.annotations).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    expect(upsertNode?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    expect(removeNode?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: false,
+    });
+  });
 });
 
 describe('工具调用', () => {

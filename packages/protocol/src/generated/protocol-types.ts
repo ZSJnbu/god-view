@@ -712,6 +712,8 @@ export interface CompletedChange {
   completedAt: Timestamp;
   plannedFiles: WorkspacePath[];
   actualFiles: WorkspacePath[];
+  touchedNodeIds?: Identifier[];
+  touchedEdgeIds?: Identifier[];
   diff: ChangeDiffSummary;
   note?: string;
 }
@@ -748,6 +750,7 @@ export interface ToolResult {
   accepted: boolean;
   mapRevision: number;
   eventId?: Identifier;
+  changeSetId?: Identifier;
   errors: ToolError[];
   warnings?: ShortNote[];
 }
@@ -772,6 +775,7 @@ export interface GetMapResult {
   annotations?: AnnotationThread[];
   writeAccessRequests?: WriteAccessRequest[];
   changeProposals?: ChangeProposal[];
+  activeChanges?: ActiveChange[];
   coverage?: CoverageReport;
 }
 /**

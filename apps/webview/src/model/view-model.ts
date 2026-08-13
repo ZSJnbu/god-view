@@ -31,6 +31,8 @@ export interface VisibleEdge {
   /** 聚合了多少条底层关系。远景下模块边显示该计数。 */
   readonly count: number;
   readonly memberIds: readonly Identifier[];
+  /** 用于连线悬停说明；聚合边保留最多两条原始理由，避免标签无限增长。 */
+  readonly description: string;
 }
 
 export interface VisibleGraph {
@@ -150,8 +152,20 @@ function aggregateEdges(
       type: types.size === 1 && first !== undefined ? first.type : 'mixed',
       count: bucket.members.length,
       memberIds: bucket.members.map((member) => member.id),
+      description: summarizeReasons(bucket.members),
     };
   });
+}
+
+function summarizeReasons(edges: readonly GraphEdge[]): string {
+  const reasons = [
+    ...new Set(
+      edges.map((edge) => edge.reason?.trim()).filter((reason): reason is string => !!reason),
+    ),
+  ];
+  if (reasons.length === 0) return '地图中未提供补充说明';
+  const shown = reasons.slice(0, 2).join('；');
+  return reasons.length > 2 ? `${shown}；另有 ${String(reasons.length - 2)} 条` : shown;
 }
 
 function applyFocus(

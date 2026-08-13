@@ -64,23 +64,29 @@ function parseAnnotationCreate(record: Record_): Result<WebviewCommand, Protocol
   const nodeIds = stringArray(record['nodeIds'], 20);
   const excludedPaths =
     record['excludedPaths'] === undefined ? [] : stringArray(record['excludedPaths'], 50);
+  const autoAnswerAgent = record['autoAnswerAgent'];
   if (
-    !['note', 'explain', 'risk'].includes(String(annotationType)) ||
+    !['note', 'explain', 'risk', 'change'].includes(String(annotationType)) ||
     typeof body !== 'string' ||
     body.trim() === '' ||
     body.length > 4000 ||
     nodeIds === undefined ||
     nodeIds.length === 0 ||
-    excludedPaths === undefined
+    excludedPaths === undefined ||
+    (autoAnswerAgent !== undefined &&
+      (typeof autoAnswerAgent !== 'string' || !['codex', 'claude-code'].includes(autoAnswerAgent)))
   ) {
     return invalid('createAnnotation 的类型、正文或目标非法', '/body');
   }
   return ok({
     type: 'createAnnotation',
-    annotationType: annotationType as 'note' | 'explain' | 'risk',
+    annotationType: annotationType as 'note' | 'explain' | 'risk' | 'change',
     body,
     nodeIds,
     ...(excludedPaths.length === 0 ? {} : { excludedPaths }),
+    ...(autoAnswerAgent === undefined
+      ? {}
+      : { autoAnswerAgent: autoAnswerAgent as 'codex' | 'claude-code' }),
   });
 }
 
@@ -100,9 +106,20 @@ function parseProposalCommand(record: Record_): Result<WebviewCommand, ProtocolE
     return invalid(`${String(record['type'])} 缺少 proposalId`, '/proposalId');
   if (record['type'] === 'approveProposal') {
     const approvedScope = stringArray(record['approvedScope'], 500);
+    const autoStartAgent = record['autoStartAgent'];
     return approvedScope === undefined || approvedScope.length === 0
       ? invalid('approveProposal 必须选择至少一个文件', '/approvedScope')
-      : ok({ type: 'approveProposal', proposalId, approvedScope });
+      : autoStartAgent !== undefined &&
+          (typeof autoStartAgent !== 'string' || !['codex', 'claude-code'].includes(autoStartAgent))
+        ? invalid('approveProposal 的 autoStartAgent 非法', '/autoStartAgent')
+        : ok({
+            type: 'approveProposal',
+            proposalId,
+            approvedScope,
+            ...(autoStartAgent === undefined
+              ? {}
+              : { autoStartAgent: autoStartAgent as 'codex' | 'claude-code' }),
+          });
   }
   return record['type'] === 'rejectProposal'
     ? ok({ type: 'rejectProposal', proposalId })
@@ -154,11 +171,134 @@ function parseChangeCommand(record: Record_): Result<WebviewCommand, ProtocolErr
   });
 }
 
+function parseAgentCommand(record: Record_): Result<WebviewCommand, ProtocolError> {
+  const type = record['type'];
+  if (type === 'sendAgentMessage') return parseSendAgentMessage(record);
+  if (type === 'startAnnotationAnswer') return parseStartAnnotationAnswer(record);
+  if (type === 'startApprovedChange') return parseStartApprovedChange(record);
+  if (type === 'startMapCompletion') return parseStartMapCompletion(record);
+  if (type === 'startInitialization' || type === 'startReinitialization') {
+    return ['codex', 'claude-code'].includes(String(record['agent']))
+      ? ok({ type, agent: record['agent'] as 'codex' | 'claude-code' })
+      : invalid('startInitialization 缺少受支持的 agent', '/agent');
+  }
+  const runId = record['runId'];
+  if (typeof runId !== 'string' || runId === '' || runId.length > 200) {
+    return invalid(`${String(type)} 缺少合法 runId`, '/runId');
+  }
+  if (type === 'cancelAgentRun') return ok({ type, runId });
+  const answer = record['answer'];
+  return typeof answer === 'string' && answer.trim() !== '' && answer.length <= 4000
+    ? ok({ type: 'answerAgentQuestion', runId, answer })
+    : invalid('answerAgentQuestion 缺少合法 answer', '/answer');
+}
+
+function parseSendAgentMessage(record: Record_): Result<WebviewCommand, ProtocolError> {
+  const agent = record['agent'];
+  const message = record['message'];
+  const mode = record['mode'];
+  const nodeIds = record['nodeIds'] === undefined ? [] : stringArray(record['nodeIds'], 20);
+  if (
+    !['codex', 'claude-code'].includes(String(agent)) ||
+    typeof message !== 'string' ||
+    message.trim() === '' ||
+    message.length > 8000 ||
+    !['chat', 'change'].includes(String(mode)) ||
+    nodeIds === undefined
+  )
+    return invalid('sendAgentMessage 的 Agent、正文、模式或上下文非法', '/message');
+  return ok({
+    type: 'sendAgentMessage',
+    agent: agent as 'codex' | 'claude-code',
+    message,
+    mode: mode as 'chat' | 'change',
+    ...(nodeIds.length === 0 ? {} : { nodeIds }),
+  });
+}
+
+function parseStartApprovedChange(record: Record_): Result<WebviewCommand, ProtocolError> {
+  const proposalId = record['proposalId'];
+  const agent = record['agent'];
+  return typeof proposalId === 'string' &&
+    proposalId !== '' &&
+    typeof agent === 'string' &&
+    ['codex', 'claude-code'].includes(agent)
+    ? ok({
+        type: 'startApprovedChange',
+        proposalId,
+        agent: agent as 'codex' | 'claude-code',
+      })
+    : invalid('startApprovedChange 缺少合法 proposalId 或 agent', '/proposalId');
+}
+
+function parseStartAnnotationAnswer(record: Record_): Result<WebviewCommand, ProtocolError> {
+  const annotationId = record['annotationId'];
+  const agent = record['agent'];
+  return typeof annotationId === 'string' &&
+    annotationId !== '' &&
+    typeof agent === 'string' &&
+    ['codex', 'claude-code'].includes(agent)
+    ? ok({
+        type: 'startAnnotationAnswer',
+        annotationId,
+        agent: agent as 'codex' | 'claude-code',
+      })
+    : invalid('startAnnotationAnswer 缺少合法 annotationId 或 agent', '/annotationId');
+}
+
+function parseStartMapCompletion(record: Record_): Result<WebviewCommand, ProtocolError> {
+  const agent = record['agent'];
+  const target = record['target'];
+  return typeof agent === 'string' &&
+    ['codex', 'claude-code'].includes(agent) &&
+    typeof target === 'string' &&
+    ['groups', 'files'].includes(target)
+    ? ok({
+        type: 'startMapCompletion',
+        agent: agent as 'codex' | 'claude-code',
+        target: target as 'groups' | 'files',
+      })
+    : invalid('startMapCompletion 缺少受支持的 agent 或 target', '/target');
+}
+
+function parseAgentPaneHeightCommand(record: Record_): Result<WebviewCommand, ProtocolError> {
+  const height = record['height'];
+  return typeof height === 'number' && Number.isFinite(height) && height >= 120 && height <= 2000
+    ? ok({ type: 'saveAgentPaneHeight', height: Math.round(height) })
+    : invalid('saveAgentPaneHeight 缺少合法高度', '/height');
+}
+
+function parseAgentPaneViewCommand(record: Record_): Result<WebviewCommand, ProtocolError> {
+  const view = asRecord(record['view']);
+  const bounds = asRecord(view?.['floatingBounds']);
+  if (
+    !['docked', 'floating'].includes(String(view?.['mode'])) ||
+    bounds === undefined ||
+    !['x', 'y', 'width', 'height'].every((key) => isFiniteNumber(bounds[key])) ||
+    (bounds['width'] as number) < 360 ||
+    (bounds['height'] as number) < 240
+  )
+    return invalid('saveAgentPaneView 缺少合法模式或浮窗尺寸', '/view');
+  return ok({
+    type: 'saveAgentPaneView',
+    view: {
+      mode: view?.['mode'] as 'docked' | 'floating',
+      floatingBounds: {
+        x: Math.round(bounds['x'] as number),
+        y: Math.round(bounds['y'] as number),
+        width: Math.round(bounds['width'] as number),
+        height: Math.round(bounds['height'] as number),
+      },
+    },
+  });
+}
+
 /**
  * 解析来自 Webview 的命令。
  *
  * 未知命令一律拒绝：宽松忽略会让「命令授权」形同虚设。
  */
+// eslint-disable-next-line complexity -- exhaustive untrusted command boundary.
 export function parseWebviewCommand(input: unknown): Result<WebviewCommand, ProtocolError> {
   const record = asRecord(input);
   if (record === undefined) {
@@ -166,9 +306,34 @@ export function parseWebviewCommand(input: unknown): Result<WebviewCommand, Prot
   }
   const type = record['type'];
   if (
-    ['ready', 'requestSnapshot', 'generateAgentTask', 'copyAgentSetup', 'configureAgent'].includes(
-      String(type),
-    )
+    [
+      'startInitialization',
+      'startReinitialization',
+      'startMapCompletion',
+      'startAnnotationAnswer',
+      'startApprovedChange',
+      'answerAgentQuestion',
+      'cancelAgentRun',
+      'sendAgentMessage',
+    ].includes(String(type))
+  ) {
+    return parseAgentCommand(record);
+  }
+  if (type === 'saveAgentPaneHeight') return parseAgentPaneHeightCommand(record);
+  if (type === 'saveAgentPaneView') return parseAgentPaneViewCommand(record);
+  if (['openDiff', 'interruptChange', 'reviewChange'].includes(String(type))) {
+    return parseChangeCommand(record);
+  }
+  if (
+    [
+      'ready',
+      'requestSnapshot',
+      'generateAgentTask',
+      'copyAgentSetup',
+      'configureAgent',
+      'refreshAgentStatus',
+      'exportAgentConversation',
+    ].includes(String(type))
   )
     return parseImmediateCommand(record);
   switch (type) {
@@ -183,10 +348,6 @@ export function parseWebviewCommand(input: unknown): Result<WebviewCommand, Prot
       return parseProposalCommand(record);
     case 'openSource':
       return parseOpenSource(record);
-    case 'openDiff':
-    case 'interruptChange':
-    case 'reviewChange':
-      return parseChangeCommand(record);
     case 'saveLayout': {
       const positions = parsePositions(record['positions']);
       return positions.ok ? ok({ type: 'saveLayout', positions: positions.value }) : positions;
@@ -222,9 +383,24 @@ function requireFactsRevision(
 }
 
 function parseSnapshot(record: Record_): Result<ExtensionEvent, ProtocolError> {
-  return asRecord(record['document']) === undefined
-    ? invalid('map/snapshot 缺少 document', '/document')
-    : requireFactsRevision(record, 'map/snapshot');
+  if (asRecord(record['document']) === undefined)
+    return invalid('map/snapshot 缺少 document', '/document');
+  if (
+    record['agentPaneHeight'] !== undefined &&
+    (typeof record['agentPaneHeight'] !== 'number' ||
+      !Number.isFinite(record['agentPaneHeight']) ||
+      record['agentPaneHeight'] < 120 ||
+      record['agentPaneHeight'] > 2000)
+  )
+    return invalid('map/snapshot 的 agentPaneHeight 非法', '/agentPaneHeight');
+  if (record['agentPaneView'] !== undefined) {
+    const parsed = parseAgentPaneViewCommand({
+      type: 'saveAgentPaneView',
+      view: record['agentPaneView'],
+    });
+    if (!parsed.ok) return invalid('map/snapshot 的 agentPaneView 非法', '/agentPaneView');
+  }
+  return requireFactsRevision(record, 'map/snapshot');
 }
 
 function parsePatch(record: Record_): Result<ExtensionEvent, ProtocolError> {
@@ -241,10 +417,16 @@ function parseFacts(record: Record_): Result<ExtensionEvent, ProtocolError> {
 }
 
 /** 解析来自扩展的事件。Webview 同样不信任宿主消息，避免注入伪造状态。 */
+// eslint-disable-next-line complexity -- exhaustive untrusted-message boundary.
 export function parseExtensionEvent(input: unknown): Result<ExtensionEvent, ProtocolError> {
   const record = asRecord(input);
   if (record === undefined) {
     return invalid('消息必须是对象');
+  }
+  if (record['type'] === 'agent/conversation') {
+    return asRecord(record['conversation']) !== undefined
+      ? ok(record as unknown as ExtensionEvent)
+      : invalid('agent/conversation 缺少 conversation', '/conversation');
   }
   switch (record['type']) {
     case 'map/snapshot':
@@ -257,6 +439,14 @@ export function parseExtensionEvent(input: unknown): Result<ExtensionEvent, Prot
       return typeof record['state'] === 'string'
         ? ok(record as unknown as ExtensionEvent)
         : invalid('status 缺少 state', '/state');
+    case 'agent/status':
+      return Array.isArray(record['agents'])
+        ? ok(record as unknown as ExtensionEvent)
+        : invalid('agent/status 缺少 agents', '/agents');
+    case 'agent/run':
+      return asRecord(record['run']) !== undefined
+        ? ok(record as unknown as ExtensionEvent)
+        : invalid('agent/run 缺少 run', '/run');
     case 'error':
       return typeof record['code'] === 'string' && typeof record['message'] === 'string'
         ? ok(record as unknown as ExtensionEvent)

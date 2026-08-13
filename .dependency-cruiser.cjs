@@ -89,7 +89,7 @@ module.exports = {
         pathNot: [
           '\\.d\\.ts$',
           '(^|/)(?:eslint|vitest|vite)\\.config\\.[^/]+$',
-          '^apps/webview/e2e/(?:map\\.spec\\.ts|harness\\.js)$',
+          '^apps/webview/e2e/(?:map\\.spec\\.ts|(?:(?:annotation|approved-change)-)?harness\\.js)$',
         ],
       },
       to: {},

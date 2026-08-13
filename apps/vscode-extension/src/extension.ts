@@ -13,23 +13,30 @@ import { currentProtocolVersion, type Identifier } from '@god-view/protocol';
 import { commandIds, configKeys, configSection, outputChannelName, viewIds } from './constants.js';
 import { systemClock } from './clock.js';
 import { AsyncLock } from './async-lock.js';
-import { buildAgentSetup } from './agent-setup.js';
-import { describeAdapter, detectAgentAdapters } from './agent-adapters.js';
+import { inspectAgentMcpConfiguration, type ConfigurableAgent } from './agent-mcp-configuration.js';
 import {
-  configureAgentMcp,
-  inspectAgentMcpConfiguration,
-  type ConfigurableAgent,
-} from './agent-mcp-configuration.js';
+  acceptAgentDataBoundary,
+  configureAgent,
+  copyAgentSetup,
+  publishAgentStatus,
+  showAgentAdapters,
+} from './agent-controller.js';
 import { buildAgentTask } from './agent-task.js';
+import { AgentInitializationRunner } from './agent-initialization-runner.js';
+import { ProjectMemory } from './project-memory.js';
+import type { AgentRunPurpose } from './agent-initialization-runner.js';
 import { mapExportFileName, serializeMapExport } from './map-export.js';
 import { createLogger, type Logger } from './logger.js';
 import { installRuntimeAssets, type RuntimeAssetState } from './runtime-assets.js';
 import { MapService } from './engine/map-service.js';
+import { formatAnnotationTask } from './engine/annotation-context.js';
 import { MapPanel } from './view/map-panel.js';
+import { formatApprovedChangeTask } from './view/map-panel-commands.js';
 import { parseMapPanelState } from './view/map-panel-state.js';
 import { StructureTreeProvider } from './view/structure-tree.js';
 import {
   agentDataBoundaryKey,
+  agentPaneHeightKey,
   isWorkspaceLayoutKey,
   workspaceStorageSegment,
 } from './workspace-data.js';
@@ -54,6 +61,8 @@ interface Session {
   readonly identity: WorkspaceIdentity;
   readonly service: MapService;
   readonly tree: StructureTreeProvider;
+  readonly agentRunner: AgentInitializationRunner;
+  readonly projectMemory: ProjectMemory;
   readonly disposables: Disposable[];
 }
 
@@ -91,12 +100,14 @@ export async function activate(context: ExtensionContext): Promise<void> {
       await generateAgentTask(logger);
     }),
     commands.registerCommand(commandIds.copyAgentSetup, async () => {
-      await copyAgentSetup(context, logger);
+      await copyAgentSetup(context, logger, await ensureSession(context, logger), runtimeAssets);
     }),
     commands.registerCommand(commandIds.configureAgent, async (agent?: unknown) => {
       await configureAgent(
         context,
         logger,
+        await ensureSession(context, logger),
+        runtimeAssets,
         agent === 'codex' || agent === 'claude-code' ? agent : undefined,
       );
     }),
@@ -173,7 +184,14 @@ async function restoreMapPanel(
     return;
   }
   await current.service.syncBranch();
-  MapPanel.restore(panel, context, current.service, logger.child('webview'));
+  MapPanel.restore(
+    panel,
+    context,
+    current.service,
+    logger.child('webview'),
+    current.agentRunner,
+    () => publishAgentStatus(context, logger, current, runtimeAssets),
+  );
   logger.info('webview.restored', { workspaceId: current.identity.id });
 }
 
@@ -219,8 +237,90 @@ async function ensureSessionUnlocked(
   await service.open();
 
   const tree = new StructureTreeProvider(service);
+  const taskModeByPurpose: Record<
+    AgentRunPurpose,
+    'automatic' | 'reinitialize' | 'complete_groups' | 'complete_files'
+  > = {
+    initialization: 'automatic',
+    reinitialization: 'reinitialize',
+    group_completion: 'complete_groups',
+    file_completion: 'complete_files',
+    project_chat: 'automatic',
+    annotation_answer: 'automatic',
+    approved_change: 'automatic',
+  };
+  const projectMemory = new ProjectMemory(target.root.fsPath);
+  const restoredConversation = await projectMemory.load();
+  const withProjectMemory = (task: string): string =>
+    projectMemory.context === ''
+      ? task
+      : [
+          task,
+          '',
+          '以下是 God View 在上次会话结束时保存的项目记忆。它只用于恢复上下文；代码与最新 get_map 仍是权威真相：',
+          projectMemory.context,
+        ].join('\n');
+  const agentRunner = new AgentInitializationRunner({
+    workspaceRoot: target.root.fsPath,
+    now: systemClock,
+    task: (purpose) =>
+      withProjectMemory(buildCurrentAgentTask(service, taskModeByPurpose[purpose])),
+    ...(restoredConversation === undefined ? {} : { initialConversation: restoredConversation }),
+    projectChatTask: (message) =>
+      withProjectMemory(
+        [
+          '你正在 God View 插件内部与用户持续对话。',
+          `当前权威地图：r${String(service.snapshot.revision)}，${String(service.snapshot.nodes.size)} 个节点，${String(service.snapshot.edges.size)} 条关系。`,
+          '先调用 get_map 获取最新地图，再用自然语言直接回答用户。可以只读检查仓库以给出有证据的答案。',
+          '本轮是只读对话：不得修改文件，不得 begin_change，不得申请或假定写入授权。',
+          '如果用户表达修改意图，请说明影响与建议范围，并提示他在对话框勾选“作为修改请求”后发送；不要自行编辑。',
+          '不要输出机器 JSON，也不要让用户复制到外部；答案会直接实时显示在插件对话里。',
+          '',
+          `用户：${message}`,
+        ].join('\n'),
+      ),
+    annotationTask: (annotationId) => {
+      const task = formatAnnotationTask(annotationId, service.snapshot);
+      return task === undefined ? undefined : withProjectMemory(task);
+    },
+    annotationAnswered: (annotationId) => {
+      const annotation = service.snapshot.annotations.get(annotationId);
+      const answered = annotation?.messages.some((message) => message.author === 'agent') === true;
+      return annotation?.type === 'change'
+        ? answered &&
+            [...service.snapshot.changeProposals.values()].some(
+              (proposal) => proposal.annotationId === annotationId,
+            )
+        : answered;
+    },
+    approvedChangeTask: (proposalId) => {
+      const proposal = service.snapshot.changeProposals.get(proposalId);
+      return proposal?.status === 'approved' ? formatApprovedChangeTask(proposal) : undefined;
+    },
+    approvedChangeCompleted: (proposalId) =>
+      [...service.snapshot.completedChanges.values()].some(
+        (change) =>
+          change.proposalId === proposalId &&
+          change.status === 'pending_review' &&
+          ((change.touchedNodeIds?.length ?? 0) > 0 || (change.touchedEdgeIds?.length ?? 0) > 0),
+      ),
+    authorize: async (agent) =>
+      (await acceptAgentDataBoundary(context, logger, target.id)) &&
+      (await isAgentReady(agent, target, runtimeAssets)),
+    onUpdate: (run) => {
+      MapPanel.postToCurrent({ type: 'agent/run', run });
+    },
+    onConversationUpdate: (conversation) => {
+      projectMemory.persist(conversation, service.snapshot);
+      MapPanel.postToCurrent({ type: 'agent/conversation', conversation });
+    },
+  });
   const disposables: Disposable[] = [
     service,
+    new Disposable(() => {
+      agentRunner.dispose();
+      void projectMemory.flush();
+    }),
     window.createTreeView(viewIds.structure, { treeDataProvider: tree, showCollapseAll: true }),
     service.onDidUpdate(() => {
       tree.refresh();
@@ -232,7 +332,7 @@ async function ensureSessionUnlocked(
     }),
   ];
 
-  session = { identity: target, service, tree, disposables };
+  session = { identity: target, service, tree, agentRunner, projectMemory, disposables };
   return session;
 }
 
@@ -275,7 +375,11 @@ async function clearWorkspaceData(context: ExtensionContext, logger: Logger): Pr
   await deleteIfPresent(storageDirectory);
   await deleteIfPresent(Uri.joinPath(identity.root, '.godview'));
   for (const key of context.workspaceState.keys()) {
-    if (isWorkspaceLayoutKey(key, identity.id) || key === agentDataBoundaryKey(identity.id)) {
+    if (
+      isWorkspaceLayoutKey(key, identity.id) ||
+      key === agentDataBoundaryKey(identity.id) ||
+      key === agentPaneHeightKey(identity.id)
+    ) {
       await context.workspaceState.update(key, undefined);
     }
   }
@@ -374,7 +478,13 @@ async function openProjectMap(
   // `.git/HEAD` 监听覆盖不到 worktree 与 submodule，这里主动补一次；
   // 分支没变时 BranchBinding 会短路，代价只有一次 git 查询。
   await current.service.syncBranch();
-  const panel = MapPanel.show(context, current.service, logger.child('webview'));
+  const panel = MapPanel.show(
+    context,
+    current.service,
+    logger.child('webview'),
+    current.agentRunner,
+    () => publishAgentStatus(context, logger, current, runtimeAssets),
+  );
   if (nodeId !== undefined) {
     panel.focusNode(nodeId);
   }
@@ -402,7 +512,9 @@ async function revealActiveFile(context: ExtensionContext, logger: Logger): Prom
     await window.showInformationMessage(`${relative} 还没有归属任何节点，可以让 Agent 补充。`);
     return;
   }
-  MapPanel.show(context, current.service, logger.child('webview')).focusNode(first.id);
+  MapPanel.show(context, current.service, logger.child('webview'), current.agentRunner, () =>
+    publishAgentStatus(context, logger, current, runtimeAssets),
+  ).focusNode(first.id);
 }
 
 /**
@@ -436,173 +548,35 @@ async function generateAgentTask(logger: Logger): Promise<void> {
   await window.showInformationMessage('Agent 任务已复制到剪贴板。');
 }
 
-/** 复制工作区专属 MCP 配置；不代替用户修改任何 Agent 全局配置。 */
-async function copyAgentSetup(context: ExtensionContext, logger: Logger): Promise<void> {
-  const assets = runtimeAssets;
-  if (assets === undefined) {
-    await window.showErrorMessage(
-      'God View Gateway 未能安装到运行时目录。请执行「God View: Show Diagnostics」查看原因。',
-    );
-    return;
-  }
-  const current = await ensureSession(context, logger);
-  if (current === undefined) {
-    return;
-  }
-  if (!(await acceptAgentDataBoundary(context, logger, current.identity.id))) return;
-  await env.clipboard.writeText(
-    buildAgentSetup({
-      // Electron 在该环境变量下以普通 Node runtime 运行，避免要求用户另装 Node。
-      runtimeExecutable: process.execPath,
-      gatewayEntry: assets.gatewayEntry,
-      workspaceRoot: current.identity.root.fsPath,
-      platform: process.platform,
-    }),
+function buildCurrentAgentTask(
+  service: MapService,
+  mode: 'automatic' | 'reinitialize' | 'complete_groups' | 'complete_files' = 'automatic',
+): string {
+  const snapshot = service.snapshot;
+  return buildAgentTask(
+    {
+      revision: snapshot.revision,
+      nodeCount: listNodes(snapshot).length,
+      coverage: service.coverage,
+      drift: service.drift,
+    },
+    mode,
   );
-  logger.info('agentSetup.copied', { workspaceId: current.identity.id });
-  await window.showInformationMessage('Codex、Claude Code 与通用 MCP 接入配置已复制。');
 }
 
-async function configureAgent(
-  context: ExtensionContext,
-  logger: Logger,
-  requested?: ConfigurableAgent,
-): Promise<void> {
-  const assets = runtimeAssets;
-  if (assets === undefined) {
-    await window.showErrorMessage('God View Gateway 尚未就绪，请先查看诊断。');
-    return;
-  }
-  const current = await ensureSession(context, logger);
-  if (current === undefined) return;
-  const agent = requested ?? (await pickConfigurableAgent());
-  if (agent === undefined) return;
-  if (!(await acceptAgentDataBoundary(context, logger, current.identity.id))) return;
-
-  const options = {
+async function isAgentReady(
+  agent: ConfigurableAgent,
+  identity: WorkspaceIdentity,
+  assets: RuntimeAssetState | undefined,
+): Promise<boolean> {
+  if (assets === undefined) return false;
+  const status = await inspectAgentMcpConfiguration({
     agent,
     runtimeExecutable: process.execPath,
     gatewayEntry: assets.gatewayEntry,
-    workspaceRoot: current.identity.root.fsPath,
-  } as const;
-  const status = await inspectAgentMcpConfiguration(options);
-  if (status.state === 'current') {
-    await showAgentRestartInstruction(agent, false);
-    return;
-  }
-  const displayName = agent === 'codex' ? 'Codex' : 'Claude Code';
-  const action = await window.showWarningMessage(
-    [
-      `${displayName} 尚未接入当前工作区的 God View MCP。`,
-      status.state === 'conflict'
-        ? '已存在同名但指向其他 runtime/workspace 的配置，将先移除再替换。'
-        : '将写入 Agent 自己的 MCP 配置；不会读取登录态或密钥。',
-      `工作区：${current.identity.root.fsPath}`,
-      '现有 Agent 会话不会热加载新工具，配置成功后必须退出并在这个目录重开。',
-    ].join('\n'),
-    { modal: true },
-    status.state === 'conflict' ? '替换并验证' : '配置并验证',
-  );
-  if (action === undefined) return;
-  try {
-    await configureAgentMcp(options, status.state === 'conflict');
-    logger.info('agentMcp.configured', {
-      workspaceId: current.identity.id,
-      agent,
-      replaced: status.state === 'conflict',
-    });
-    await showAgentRestartInstruction(agent, true);
-  } catch (error) {
-    logger.error('agentMcp.configure.failed', {
-      workspaceId: current.identity.id,
-      agent,
-      errorCode: describeError(error),
-    });
-    const fallback = await window.showErrorMessage(
-      `${displayName} MCP 配置或复验失败。可以复制手动命令，并在终端执行后重开 Agent 会话。`,
-      '复制手动命令',
-      '查看诊断',
-    );
-    if (fallback === '复制手动命令') await copyAgentSetup(context, logger);
-    else if (fallback === '查看诊断') await commands.executeCommand(commandIds.showDiagnostics);
-  }
-}
-
-async function acceptAgentDataBoundary(
-  context: ExtensionContext,
-  logger: Logger,
-  workspaceId: string,
-): Promise<boolean> {
-  const boundaryKey = agentDataBoundaryKey(workspaceId);
-  if (context.workspaceState.get<boolean>(boundaryKey) === true) return true;
-  const accepted = await window.showWarningMessage(
-    [
-      'Codex、Claude Code 或其他 MCP Agent 可能把其读取的工作区代码发送到云端。',
-      '数据保留、费用和训练政策由所选 Agent 决定，God View 无法预估；God View 不读取或保存 Agent 密钥。',
-      '当前接入是 monitored 模式：插件能观察 Git Diff，但不能强制 Agent 只读或阻止越界写入。',
-    ].join('\n'),
-    { modal: true },
-    '理解并继续',
-  );
-  if (accepted !== '理解并继续') {
-    logger.info('agentSetup.cancelled', { workspaceId, reason: 'data-boundary-not-accepted' });
-    return false;
-  }
-  await context.workspaceState.update(boundaryKey, true);
-  return true;
-}
-
-async function pickConfigurableAgent(): Promise<ConfigurableAgent | undefined> {
-  const statuses = await detectAgentAdapters();
-  const picked = await window.showQuickPick(
-    statuses.map((status) => ({
-      label: status.displayName,
-      description: status.installed ? (status.version ?? '已安装') : '未检测到 CLI',
-      agent: status.id,
-    })),
-    { title: '选择要接入当前工作区的 Agent' },
-  );
-  if (picked === undefined) return undefined;
-  if (picked.description === '未检测到 CLI') {
-    await window.showErrorMessage(`${picked.label} CLI 未安装或不在 PATH 中。`);
-    return undefined;
-  }
-  return picked.agent;
-}
-
-async function showAgentRestartInstruction(
-  agent: ConfigurableAgent,
-  newlyConfigured: boolean,
-): Promise<void> {
-  const name = agent === 'codex' ? 'Codex' : 'Claude Code';
-  await window.showInformationMessage(
-    `${name} MCP ${newlyConfigured ? '已配置并通过复验' : '配置已与当前工作区一致'}。请退出当前 ${name} 会话，在这个工作区目录重新启动，然后先让 Agent 调用 get_map；旧会话不会获得新工具。`,
-    { modal: true },
-  );
-}
-
-/** 检测本地 CLI 并展示显式能力；只执行 --version，不探测登录态或密钥。 */
-async function showAgentAdapters(logger: Logger): Promise<void> {
-  const statuses = await detectAgentAdapters();
-  logger.info('adapters.detected', {
-    codex: statuses.find((status) => status.id === 'codex')?.installed,
-    claudeCode: statuses.find((status) => status.id === 'claude-code')?.installed,
+    workspaceRoot: identity.root.fsPath,
   });
-  const picked = await window.showQuickPick(
-    statuses.map((status) => ({
-      label: `${status.installed ? '$(check)' : '$(circle-slash)'} ${status.displayName}`,
-      description: status.installed ? (status.version ?? '已检测到') : '未检测到可执行文件',
-      detail: describeAdapter(status),
-      status,
-    })),
-    {
-      title: 'God View Agent Adapters（只读检测）',
-      placeHolder: '选择一个 Adapter 查看接入能力；不会修改配置',
-    },
-  );
-  if (picked !== undefined) {
-    await window.showInformationMessage(describeAdapter(picked.status), { modal: true });
-  }
+  return status.state === 'current';
 }
 
 function readExtensionVersion(context: ExtensionContext): string {

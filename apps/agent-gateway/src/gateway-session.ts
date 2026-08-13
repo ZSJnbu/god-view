@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createProtocolValidator,
@@ -27,6 +28,8 @@ export interface GatewayOptions {
   readonly now: () => string;
   readonly adapterId?: Identifier;
   readonly validator?: ProtocolValidator;
+  /** 生产 MCP 必须等待扩展归约确认；0 仅供投递层单元测试。 */
+  readonly acknowledgementTimeoutMs?: number;
 }
 
 /** 除 get_map 外的写工具。 */
@@ -60,6 +63,7 @@ export type GatewayToolName =
   | 'complete_change';
 
 const identifierUnsafe = /[^A-Za-z0-9._:/-]/gu;
+const fileNameUnsafe = /[^A-Za-z0-9._-]/gu;
 
 /**
  * 由 sessionId 与幂等 key 推导事件 ID。
@@ -91,6 +95,7 @@ export class GatewaySession {
   readonly #options: GatewayOptions;
   readonly #layout: WorkspaceRuntimeLayout;
   readonly #validator: ProtocolValidator;
+  readonly #acknowledgementTimeoutMs: number;
   /**
    * 当前分支。
    *
@@ -106,6 +111,7 @@ export class GatewaySession {
     this.#layout = resolveWorkspaceRuntime(options.workspaceRoot);
     this.#validator = options.validator ?? createProtocolValidator();
     this.#branchKey = options.branchKey;
+    this.#acknowledgementTimeoutMs = options.acknowledgementTimeoutMs ?? 0;
   }
 
   /** 扩展当前绑定的分支。每次工具调用都会重新读取。 */
@@ -166,6 +172,7 @@ export class GatewaySession {
         annotations: [],
         writeAccessRequests: [],
         changeProposals: [],
+        activeChanges: [],
       };
     }
     const nodeIds = parsed.value.nodeIds;
@@ -182,6 +189,7 @@ export class GatewaySession {
       annotations: document.annotations ?? [],
       writeAccessRequests: document.writeAccessRequests ?? [],
       changeProposals: document.changeProposals ?? [],
+      activeChanges: document.activeChanges ?? [],
       ...(parsed.value.includeCoverage === false || document.coverage === undefined
         ? {}
         : { coverage: document.coverage }),
@@ -189,15 +197,24 @@ export class GatewaySession {
   }
 
   beginChange(input: unknown): Promise<ToolResult> {
-    return this.#submit('begin_change', input, (parsed, envelope) => ({
-      ...envelope,
-      type: 'change_start',
-      payload: {
-        changeSetId: parsed.changeSetId ?? envelope.eventId,
-        intent: parsed.intent,
-        ...(parsed.plannedFiles === undefined ? {} : { plannedFiles: parsed.plannedFiles }),
-      },
-    }));
+    return this.#submit(
+      'begin_change',
+      input,
+      (parsed, envelope) => ({
+        ...envelope,
+        type: 'change_start',
+        payload: {
+          changeSetId: parsed.changeSetId ?? envelope.eventId,
+          intent: parsed.intent,
+          ...(parsed.plannedFiles === undefined ? {} : { plannedFiles: parsed.plannedFiles }),
+        },
+      }),
+      (parsed, event) => ({
+        changeSetId:
+          parsed.changeSetId ??
+          (event.type === 'change_start' ? event.payload.changeSetId : event.eventId),
+      }),
+    );
   }
 
   upsertNode(input: unknown): Promise<ToolResult> {
@@ -338,6 +355,9 @@ export class GatewaySession {
           approvalToken: start.approvalToken,
         },
       }),
+      (_parsed, event) => ({
+        ...(event.type === 'change_start' ? { changeSetId: event.payload.changeSetId } : {}),
+      }),
     );
   }
 
@@ -420,19 +440,17 @@ export class GatewaySession {
         ...(this.#options.adapterId === undefined ? {} : { adapterId: this.#options.adapterId }),
       },
     };
-    await this.#deliver(event);
-    return {
-      accepted: true,
-      mapRevision: await this.#currentRevision(),
-      eventId: event.eventId,
-      errors: [],
-    };
+    return this.#deliverAndConfirm(event, await this.#currentRevision());
   }
 
   async #submit<K extends WriteToolName>(
     tool: K,
     input: unknown,
     build: (parsed: ToolInputByName[K], envelope: EventEnvelopeBase) => GodViewEvent,
+    resultFields?: (
+      parsed: ToolInputByName[K],
+      event: GodViewEvent,
+    ) => Pick<ToolResult, 'changeSetId'>,
   ): Promise<ToolResult> {
     // 先同步分支再取版本号：两者必须来自同一次读取，否则会用旧分支的版本
     // 去校验新分支的基线。
@@ -471,14 +489,52 @@ export class GatewaySession {
     if (!validated.ok) {
       return { ...this.#rejected(toToolErrors(validated.error), revision), ...warnings };
     }
-    await this.#deliver(validated.value);
+    const confirmed = await this.#deliverAndConfirm(validated.value, revision);
     return {
-      accepted: true,
-      mapRevision: revision,
-      eventId: validated.value.eventId,
-      errors: [],
+      ...confirmed,
+      ...(confirmed.accepted && resultFields !== undefined
+        ? resultFields(parsed.value, validated.value)
+        : {}),
       ...warnings,
     };
+  }
+
+  async #deliverAndConfirm(event: GodViewEvent, revision: number): Promise<ToolResult> {
+    if (this.#acknowledgementTimeoutMs <= 0) {
+      await this.#deliver(event);
+      return { accepted: true, mapRevision: revision, eventId: event.eventId, errors: [] };
+    }
+    const acknowledgementFile = join(
+      this.#layout.acknowledgementsDir,
+      `${event.eventId.replace(fileNameUnsafe, '-')}.json`,
+    );
+    // 同一幂等 key 可在分支切换后重试。旧分支留下的真实回执也不能冒充本次投递结果。
+    await rm(acknowledgementFile, { force: true });
+    await this.#deliver(event);
+    const deadline = Date.now() + this.#acknowledgementTimeoutMs;
+    while (Date.now() < deadline) {
+      const contents = await readTextFile(acknowledgementFile);
+      if (contents !== undefined) {
+        await rm(acknowledgementFile, { force: true });
+        try {
+          const parsed = JSON.parse(contents) as unknown;
+          const validated = this.#validator.validateToolResult(parsed);
+          if (validated.ok) return validated.value;
+        } catch {
+          // 损坏的回执按未确认处理，最终给出明确超时而不是假成功。
+        }
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    return this.#rejected(
+      [
+        {
+          code: errorCodes.CANCELLED,
+          message: '事件已投递，但扩展未在期限内确认归约。请保持 VS Code 工作区打开后重试。',
+        },
+      ],
+      await this.#currentRevision(),
+    );
   }
 
   /**
@@ -488,7 +544,7 @@ export class GatewaySession {
    */
   async #deliver(event: GodViewEvent): Promise<void> {
     this.#sequence += 1;
-    const fileName = `${String(this.#sequence).padStart(6, '0')}-${event.eventId.replace(identifierUnsafe, '-')}.json`;
+    const fileName = `${String(this.#sequence).padStart(6, '0')}-${event.eventId.replace(fileNameUnsafe, '-')}.json`;
     await writeFileAtomic(join(this.#layout.inboxDir, fileName), JSON.stringify(event));
   }
 

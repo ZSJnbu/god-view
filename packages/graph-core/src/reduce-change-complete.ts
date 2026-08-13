@@ -57,6 +57,7 @@ export function reduceChangeComplete(
   const completedChanges = new Map(snapshot.completedChanges);
   const completed = buildCompletedChange(change, event);
   if (completed !== undefined) completedChanges.set(changeSetId, completed);
+  const annotations = annotationAfterCompletion(snapshot, change, status);
   return ok({
     ...snapshot,
     revision,
@@ -65,8 +66,25 @@ export function reduceChangeComplete(
     edges,
     activeChanges,
     completedChanges,
+    annotations,
     appliedEventIds: new Set([...snapshot.appliedEventIds, event.eventId]),
   });
+}
+
+function annotationAfterCompletion(
+  snapshot: GraphSnapshot,
+  change: ActiveChange,
+  status: ChangeCompleteEvent['payload']['status'],
+): GraphSnapshot['annotations'] {
+  const annotations = new Map(snapshot.annotations);
+  if (change.proposalId === undefined || status === 'completed') return annotations;
+  const proposal = snapshot.changeProposals.get(change.proposalId);
+  const annotation =
+    proposal === undefined ? undefined : snapshot.annotations.get(proposal.annotationId);
+  if (annotation !== undefined) {
+    annotations.set(annotation.id, { ...annotation, status: 'needs_clarification' });
+  }
+  return annotations;
 }
 
 function buildCompletedChange(
@@ -87,6 +105,8 @@ function buildCompletedChange(
     completedAt: event.timestamp,
     plannedFiles: [...(change.plannedFiles ?? [])],
     actualFiles: [...(event.payload.actualFiles ?? change.diff.files.map((file) => file.path))],
+    touchedNodeIds: [...change.touchedNodeIds],
+    touchedEdgeIds: [...change.touchedEdgeIds],
     diff: change.diff,
     ...(event.payload.note === undefined ? {} : { note: event.payload.note }),
   };

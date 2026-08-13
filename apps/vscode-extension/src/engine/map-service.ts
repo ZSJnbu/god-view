@@ -2,8 +2,6 @@ import { randomBytes } from 'node:crypto';
 import { EventEmitter, RelativePattern, Uri, workspace } from 'vscode';
 import {
   computeCoverage,
-  listNodes,
-  toSnapshotDocument,
   type GraphSnapshot,
   type RepositoryInventory,
 } from '@god-view/graph-core';
@@ -16,6 +14,7 @@ import {
   type GodViewEvent,
   type GraphSnapshotDocument,
   type Identifier,
+  type ToolResult,
   type WorkspacePath,
 } from '@god-view/protocol';
 import { writeFileAtomic } from '@god-view/storage';
@@ -36,6 +35,8 @@ import { rejectProposalEvent, reviewChangeEvent } from './user-events.js';
 import { validateEntities } from './entity-validation.js';
 import { interruptActiveChange } from './change-interruption.js';
 import { watchSourceChanges } from './source-change-watcher.js';
+import { acceptedEvent, rejectedEvent, unavailableRepository } from './event-acknowledgement.js';
+import { declaredPaths, publicDocument, readReducedMotion } from './map-service-helpers.js';
 export type { MapServiceOptions, MapUpdate } from './map-service-types.js';
 const runtimeDirectoryName = '.godview';
 const approvalLifetimeMs = 15 * 60 * 1000;
@@ -119,10 +120,19 @@ export class MapService {
 
     const watcher = new InboxWatcher({
       inboxDir: Uri.joinPath(this.#runtimeDir, 'inbox'),
+      acknowledgementsDir: Uri.joinPath(this.#runtimeDir, 'acknowledgements'),
       validator: this.#validator,
       logger: this.#options.logger.child('inbox'),
       onEvent: async ({ event, fileName }) => {
-        await this.#queue.run('event.apply', () => this.#applyEvent(event, fileName));
+        let outcome: ToolResult = {
+          accepted: false,
+          mapRevision: this.#binding.repositoryOrUndefined?.snapshot.revision ?? 0,
+          errors: [{ code: 'CANCELLED', message: '事件处理队列未返回结果' }],
+        };
+        await this.#queue.run('event.apply', async () => {
+          outcome = await this.#applyEvent(event, fileName);
+        });
+        return outcome;
       },
     });
     await watcher.start();
@@ -196,7 +206,7 @@ export class MapService {
   }
 
   async createAnnotation(input: {
-    readonly annotationType: 'note' | 'explain' | 'risk';
+    readonly annotationType: 'note' | 'explain' | 'risk' | 'change';
     readonly body: string;
     readonly nodeIds: readonly Identifier[];
     readonly excludedPaths?: readonly WorkspacePath[];
@@ -411,7 +421,9 @@ export class MapService {
         ...(observeCurrentGit
           ? {
               observe: (snapshot: GraphSnapshot) => this.#observeActiveChange(snapshot),
-              apply: (event: GodViewEvent) => this.#applyEvent(event, 'webview:interruptChange'),
+              apply: async (event: GodViewEvent) => {
+                await this.#applyEvent(event, 'webview:interruptChange');
+              },
             }
           : {}),
         nextEventId: () => this.#nextUserEventId('interrupt'),
@@ -552,15 +564,13 @@ export class MapService {
     this.#updates.dispose();
   }
 
-  async #applyEvent(event: GodViewEvent, fileName: string): Promise<void> {
+  async #applyEvent(event: GodViewEvent, fileName: string): Promise<ToolResult> {
     let repository = this.#binding.repositoryOrUndefined;
-    if (repository === undefined) {
-      return;
-    }
+    if (repository === undefined) return unavailableRepository();
     if (event.type === 'change_complete') {
       await this.#observeActiveChange(repository.snapshot);
       repository = this.#binding.repositoryOrUndefined;
-      if (repository === undefined) return;
+      if (repository === undefined) return unavailableRepository();
     }
     const before = repository.snapshot;
     const result = await repository.append(event);
@@ -571,11 +581,11 @@ export class MapService {
         code: result.error.code,
         entityId: result.error.entityId,
       });
-      return;
+      return rejectedEvent(event, repository.snapshot, result.error);
     }
     const patch = diffSnapshots(before, result.value);
     if (isEmptyPatch(patch)) {
-      return;
+      return acceptedEvent(event, result.value);
     }
     const { report } = computeCoverage(this.#inventory, result.value, this.#options.now());
     this.#coverage = report;
@@ -600,13 +610,11 @@ export class MapService {
       drift: this.#drift,
       coverage: report,
     });
+    return acceptedEvent(event, result.value);
   }
 
   async #publishReadModel(snapshot: GraphSnapshot): Promise<void> {
-    const document: GraphSnapshotDocument = {
-      ...toSnapshotDocument(snapshot),
-      ...(this.#coverage === undefined ? {} : { coverage: this.#coverage }),
-    };
+    const document = publicDocument(snapshot, this.#coverage, [...this.#outcomes.values()]);
     await writeFileAtomic(
       Uri.joinPath(this.#runtimeDir, 'map.json').fsPath,
       JSON.stringify(document),
@@ -624,18 +632,6 @@ export class MapService {
   }
 
   toDocument(): GraphSnapshotDocument {
-    return {
-      ...toSnapshotDocument(this.snapshot),
-      ...(this.#coverage === undefined ? {} : { coverage: this.#coverage }),
-    };
+    return publicDocument(this.snapshot, this.#coverage, [...this.#outcomes.values()]);
   }
-}
-
-function declaredPaths(snapshot: GraphSnapshot): readonly WorkspacePath[] {
-  return listNodes(snapshot).flatMap((node) => node.paths ?? []);
-}
-
-function readReducedMotion(): boolean {
-  const setting = workspace.getConfiguration('workbench').get<string>('reduceMotion');
-  return setting === 'on' || setting === 'auto';
 }

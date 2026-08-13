@@ -15,12 +15,12 @@ describe('Agent Adapter 检测', () => {
     expect(statuses.map((status) => status.version)).toEqual(['codex-cli 1.2.3', 'claude 4.5.0']);
     for (const status of statuses) {
       expect(status.capabilities).toMatchObject({
-        canBeInvoked: false,
+        canBeInvoked: true,
         supportsMcp: true,
         explainPermissionMode: 'monitored',
         supportsScopeEnforcement: false,
-        supportsCancellation: false,
-        supportsStreaming: false,
+        supportsCancellation: true,
+        supportsStreaming: true,
         maySendCodeToCloud: true,
       });
     }

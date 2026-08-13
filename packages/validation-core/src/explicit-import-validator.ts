@@ -50,8 +50,8 @@ export class ExplicitImportValidator implements Validator {
       if (text === undefined) continue;
       readSupportedSource = true;
       for (const found of imports(text)) {
-        if (!found.specifier.startsWith('.')) continue;
-        const resolved = resolveRelative(sourcePath, found.specifier);
+        const resolved = resolveWorkspaceImport(sourcePath, found.specifier);
+        if (resolved === undefined) continue;
         if ((target.targetPaths ?? []).some((path) => matchesTarget(resolved, path))) {
           return ok(
             this.#outcome(
@@ -132,6 +132,19 @@ function normalize(path: string): string {
 function resolveRelative(sourcePath: WorkspacePath, specifier: string): WorkspacePath {
   const directory = normalize(sourcePath).split('/').slice(0, -1).join('/');
   return normalize(`${directory}/${specifier}`);
+}
+
+/**
+ * 解析仓库内 import。除相对路径外，支持 TanStack/Vite 项目常见的 `@/` → `src/`
+ * 映射；其他包名仍保持 unsupported，不把第三方依赖误判为项目节点关系。
+ */
+function resolveWorkspaceImport(
+  sourcePath: WorkspacePath,
+  specifier: string,
+): WorkspacePath | undefined {
+  if (specifier.startsWith('.')) return resolveRelative(sourcePath, specifier);
+  if (specifier.startsWith('@/')) return normalize(`src/${specifier.slice(2)}`);
+  return undefined;
 }
 
 function withoutExtension(path: string): string {

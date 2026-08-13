@@ -50,7 +50,23 @@ describe('AppStore 事件处理', () => {
     expect(store.getState().sync).toBe('idle');
   });
 
-  it('补丁更新版本号', () => {
+  it('从工作区快照恢复 Agent 输出视窗高度', () => {
+    const store = new AppStore();
+    store.receive({
+      type: 'map/snapshot',
+      document: makeDocument([makeNode('a')], [], 1),
+      capabilities,
+      factsRevision: 1,
+      drift: [],
+      agentPaneHeight: 420,
+    });
+
+    expect(store.getState().agentPaneHeight).toBe(420);
+    store.setAgentPaneHeight(360);
+    expect(store.getState().agentPaneHeight).toBe(360);
+  });
+
+  it('补丁先推进权威版本，再由播放头推进画面版本', () => {
     const store = hydratedStore();
     store.receive({
       type: 'map/patch',
@@ -65,8 +81,70 @@ describe('AppStore 事件处理', () => {
       drift: [],
     });
 
+    expect(store.getState().playback).toMatchObject({
+      authoritativeRevision: 2,
+      renderedRevision: 1,
+      pendingCount: 1,
+      status: 'playing',
+    });
+    store.stepMapPlayback();
     expect(store.getState().map.revision).toBe(2);
     expect(store.getState().map.nodes.has('c')).toBe(true);
+  });
+
+  it('快速写入多个 revision 时支持暂停、逐步、跳到最新和整段回放', () => {
+    const store = hydratedStore();
+    store.receive({
+      type: 'agent/run',
+      run: {
+        runId: 'run-map',
+        agent: 'codex',
+        state: 'running',
+        output: [],
+        restartRequired: false,
+        purpose: 'reinitialization',
+      },
+    });
+    for (const [revision, id] of [
+      [2, 'c'],
+      [3, 'd'],
+      [4, 'e'],
+    ] as const) {
+      store.receive({
+        type: 'map/patch',
+        revision,
+        factsRevision: revision,
+        patch: {
+          upsertedNodes: [makeNode(id)],
+          upsertedEdges: [],
+          removedNodeIds: [],
+          removedEdgeIds: [],
+        },
+        drift: [],
+      });
+    }
+
+    expect(store.getState().map.revision).toBe(1);
+    expect(store.getState().playback).toMatchObject({
+      authoritativeRevision: 4,
+      renderedRevision: 1,
+      pendingCount: 3,
+      sessionFrameCount: 3,
+    });
+    store.pauseMapPlayback();
+    store.stepMapPlayback();
+    expect(store.getState().map.revision).toBe(2);
+    expect(store.getState().playback).toMatchObject({ status: 'paused', pendingCount: 2 });
+    store.showLatestMapRevision();
+    expect(store.getState().map.revision).toBe(4);
+    expect(store.getState().map.nodes.has('e')).toBe(true);
+
+    store.replayMapSession();
+    expect(store.getState().map.revision).toBe(1);
+    expect(store.getState().playback).toMatchObject({ replaying: true, pendingCount: 3 });
+    store.pauseMapPlayback();
+    store.stepMapPlayback();
+    expect(store.getState().map.revision).toBe(2);
   });
 
   it('错误只记录并降级，不清空已有地图', () => {
@@ -79,6 +157,7 @@ describe('AppStore 事件处理', () => {
 
     store.dismissError();
     expect(store.getState().lastError).toBeUndefined();
+    expect(store.getState().sync).toBe('idle');
   });
 
   it('status 的 focus detail 变成选中项', () => {
@@ -95,6 +174,64 @@ describe('AppStore 事件处理', () => {
 
     expect(store.getState().selectedId).toBe('a');
     expect(store.getState().sync).toBe('validating');
+  });
+
+  it('保存 Agent 配置状态与自动运行进度', () => {
+    const store = hydratedStore();
+    store.receive({
+      type: 'agent/status',
+      selectedAgent: 'codex',
+      agents: [
+        {
+          agent: 'codex',
+          displayName: 'Codex CLI',
+          installed: true,
+          version: 'codex 0.147.0',
+          configuration: 'current',
+          workspaceRoot: '/repo',
+          detail: '已复验',
+        },
+      ],
+    });
+    store.receive({
+      type: 'agent/run',
+      run: {
+        runId: 'run-1',
+        agent: 'codex',
+        state: 'running',
+        output: ['正在分析入口'],
+        restartRequired: false,
+      },
+    });
+
+    expect(store.getState().selectedAgent).toBe('codex');
+    expect(store.getState().agents[0]?.configuration).toBe('current');
+    expect(store.getState().agentRun?.output).toEqual(['正在分析入口']);
+  });
+
+  it('保存停靠或浮动的 Agent 视窗偏好', () => {
+    const store = hydratedStore();
+    store.setAgentPaneView({
+      mode: 'floating',
+      floatingBounds: { x: 24, y: 32, width: 680, height: 440 },
+    });
+    expect(store.getState().agentPaneView.mode).toBe('floating');
+    expect(store.getState().agentPaneView.floatingBounds.width).toBe(680);
+  });
+
+  it('保存常驻 Agent 对话线程', () => {
+    const store = hydratedStore();
+    store.receive({
+      type: 'agent/conversation',
+      conversation: {
+        threadId: 'thread-1',
+        agent: 'codex',
+        state: 'running',
+        activeRunId: 'run-1',
+        messages: [{ id: 'm1', role: 'user', body: '解释订单', createdAt: '2026-08-13T00:00:00Z' }],
+      },
+    });
+    expect(store.getState().agentConversation?.messages[0]?.body).toBe('解释订单');
   });
 
   it('map/facts 在图不变的情况下更新漂移与覆盖率', () => {
@@ -161,11 +298,69 @@ describe('AppStore 视图操作', () => {
     expect(store.getState().view.focusDepth).toBe(2);
   });
 
+  it('切换层级时退出局部视图，避免两个导航状态叠加', () => {
+    const store = hydratedStore();
+    store.toggleFocus('a');
+
+    store.setLevel('files');
+
+    expect(store.getState().view).toEqual({ level: 'files' });
+  });
+
+  it('显示完整地图会回到模块层、关闭详情并要求重新适配视口', () => {
+    const store = hydratedStore();
+    store.setLevel('files');
+    store.toggleFocus('a');
+    store.select('a');
+    const before = store.getState().viewportRevision;
+
+    store.showFullMap();
+
+    expect(store.getState().view).toEqual({ level: 'modules' });
+    expect(store.getState().selectedId).toBeUndefined();
+    expect(store.getState().viewportRevision).toBe(before + 1);
+  });
+
   it('记住拖拽后的坐标', () => {
     const store = hydratedStore();
     store.rememberLayout({ a: { x: 5, y: 6 } });
 
     expect(store.getState().map.layout).toEqual({ a: { x: 5, y: 6 } });
+  });
+
+  it('拖动坐标只更新持久化真源，不通知 React 重新绘制整张图', () => {
+    const store = hydratedStore();
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+
+    store.rememberLayout({ a: { x: 120, y: 80 } });
+
+    expect(store.getState().map.layout).toEqual({ a: { x: 120, y: 80 } });
+    expect(notifications).toBe(0);
+  });
+
+  it('拓扑排序替换全部旧坐标、退出局部详情并只通知一次', () => {
+    const store = hydratedStore();
+    store.rememberLayout({ a: { x: 900, y: 900 }, stale: { x: 1, y: 2 } });
+    store.toggleFocus('a');
+    store.select('a');
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+
+    store.applyTopologicalLayout({ a: { x: 0, y: 0 }, b: { x: 320, y: 0 } });
+
+    expect(store.getState().map.layout).toEqual({
+      a: { x: 0, y: 0 },
+      b: { x: 320, y: 0 },
+    });
+    expect(store.getState().view).toEqual({ level: 'modules' });
+    expect(store.getState().selectedId).toBeUndefined();
+    expect(store.getState().topologyRevision).toBe(1);
+    expect(notifications).toBe(1);
   });
 
   it('可以清空选中项', () => {
@@ -174,6 +369,35 @@ describe('AppStore 视图操作', () => {
     store.select(undefined);
 
     expect(store.getState().selectedId).toBeUndefined();
+  });
+
+  it('普通选中只改变高亮目标，不改变层级、局部模式或视口', () => {
+    const store = hydratedStore();
+    const beforeView = store.getState().view;
+    const beforeViewport = store.getState().viewportRevision;
+
+    store.select('a');
+
+    expect(store.getState().selectedId).toBe('a');
+    expect(store.getState().view).toBe(beforeView);
+    expect(store.getState().viewportRevision).toBe(beforeViewport);
+  });
+
+  it('关闭详情同时清空选择与搜索，但保留层级和聚焦设置', () => {
+    const store = hydratedStore();
+    store.setQuery('订单');
+    store.toggleFocus('a');
+    store.select('a');
+
+    store.closeDetails();
+
+    expect(store.getState().selectedId).toBeUndefined();
+    expect(store.getState().view).toMatchObject({
+      level: 'modules',
+      focusNodeId: 'a',
+      focusDepth: 1,
+    });
+    expect(store.getState().view.query).toBeUndefined();
   });
 });
 
@@ -233,6 +457,8 @@ describe('AppStore 讲解播放', () => {
       },
       drift: [],
     });
+
+    store.stepMapPlayback();
 
     expect(store.getState().map.stories.has('story.intro')).toBe(true);
     expect(store.getState().map.nodes.size).toBe(2);

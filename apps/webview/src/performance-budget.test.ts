@@ -89,7 +89,9 @@ describe('大图交互性能预算', () => {
     expect(p95(sample(graph(5_000), 5))).toBeLessThanOrEqual(3_000);
   });
 
+  // 连续采样 5 次；测试时限必须大于单次 5 秒性能预算，避免并行负载下
+  // 在 P95 断言执行前被 Vitest 自身的 5 秒默认时限终止。
   it('10,000 个语义实体的全图概览 P95 不超过 5 秒', () => {
     expect(p95(sample(graph(10_000), 5))).toBeLessThanOrEqual(5_000);
-  });
+  }, 30_000);
 });

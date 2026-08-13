@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { computeLayout, type LayoutNodeInput, type LayoutRequest } from './layout.js';
+import {
+  computeLayout,
+  computeTopologicalLayout,
+  resolveNodeOverlaps,
+  type LayoutNodeInput,
+  type LayoutRequest,
+} from './layout.js';
 
 function node(id: string, extra: Partial<LayoutNodeInput> = {}): LayoutNodeInput {
   return { id, label: id, column: 'core', weight: 2, ...extra };
@@ -37,7 +43,7 @@ describe('computeLayout', () => {
     expect(x('store')).toBeLessThan(x('ext'));
   });
 
-  it('核心列按依赖深度再分层', () => {
+  it('核心列按依赖深度纵向排序，但不侵占存储泳道', () => {
     const { positions } = computeLayout(
       request({
         nodes: [node('entry', { column: 'entry' }), node('first'), node('second')],
@@ -48,7 +54,20 @@ describe('computeLayout', () => {
       }),
     );
 
-    expect(positions['first']?.x).toBeLessThan(positions['second']?.x ?? 0);
+    expect(positions['first']?.x).toBe(positions['second']?.x);
+    expect(positions['first']?.y).toBeLessThan(positions['second']?.y ?? 0);
+
+    const withStorage = computeLayout(
+      request({
+        nodes: [
+          node('entry', { column: 'entry' }),
+          node('first'),
+          node('store', { column: 'storage' }),
+        ],
+        edges: [{ from: 'entry', to: 'first' }],
+      }),
+    );
+    expect(withStorage.positions['first']).not.toEqual(withStorage.positions['store']);
   });
 
   it('存在环时不死循环', () => {
@@ -105,5 +124,118 @@ describe('computeLayout', () => {
 
   it('空输入返回空布局', () => {
     expect(computeLayout(request()).positions).toEqual({});
+  });
+
+  it('真实 9 模块与部分持久坐标不会发生可视矩形碰撞', () => {
+    const nodes = [
+      node('application-operations'),
+      node('background-runtime'),
+      node('data-persistence', { column: 'storage' }),
+      node('delivery-assurance'),
+      node('domain-rules'),
+      node('external-integrations', { column: 'external' }),
+      node('platform-foundations'),
+      node('product-surfaces', { column: 'entry' }),
+      node('runtime-entry', { column: 'entry' }),
+    ];
+    const pinned = {
+      'delivery-assurance': { x: 230.49, y: 150.98 },
+      'platform-foundations': { x: 290.9, y: -353.31 },
+      'application-operations': { x: 614.08, y: -196.53 },
+      'background-runtime': { x: 565.69, y: 169.37 },
+      'external-integrations': { x: 940.63, y: -45.2 },
+      'product-surfaces': { x: 311.57, y: -143.95 },
+    };
+    const { positions } = computeLayout(
+      request({
+        nodes,
+        edges: [
+          { from: 'runtime-entry', to: 'product-surfaces' },
+          { from: 'product-surfaces', to: 'application-operations' },
+          { from: 'application-operations', to: 'domain-rules' },
+          { from: 'application-operations', to: 'data-persistence' },
+          { from: 'runtime-entry', to: 'background-runtime' },
+          { from: 'background-runtime', to: 'external-integrations' },
+        ],
+        pinned,
+      }),
+    );
+    expect(Object.keys(positions)).toHaveLength(9);
+    expect(countOverlaps(positions)).toBe(0);
+  });
+
+  it('增量文件节点撞上已有 pinned 模块时会保持间距并确定性避让', () => {
+    const nodes = [node('module'), node('file-a'), node('file-b')];
+    const positions = {
+      module: { x: 100, y: 100 },
+      'file-a': { x: 110, y: 110 },
+      'file-b': { x: 120, y: 120 },
+    };
+
+    const resolved = resolveNodeOverlaps(nodes, positions);
+    expect(resolved).toEqual(resolveNodeOverlaps(nodes, positions));
+    expect(countOverlaps(resolved)).toBe(0);
+  });
+});
+
+function countOverlaps(
+  positions: Readonly<Record<string, { readonly x: number; readonly y: number }>>,
+): number {
+  const values = Object.values(positions);
+  let overlaps = 0;
+  for (let left = 0; left < values.length; left += 1) {
+    for (let right = left + 1; right < values.length; right += 1) {
+      const one = values[left];
+      const two = values[right];
+      if (
+        one !== undefined &&
+        two !== undefined &&
+        Math.abs(one.x - two.x) < 224 &&
+        Math.abs(one.y - two.y) < 96
+      )
+        overlaps += 1;
+    }
+  }
+  return overlaps;
+}
+
+describe('computeTopologicalLayout', () => {
+  it('按依赖从左到右分层，并用重心排序消除可避免的交叉', () => {
+    const input = request({
+      nodes: [node('a', { column: 'entry' }), node('b', { column: 'entry' }), node('c'), node('d')],
+      // 初始 label 顺序会把 a→d 与 b→c 排成交叉；重心 sweep 应交换目标层。
+      edges: [
+        { from: 'a', to: 'd' },
+        { from: 'b', to: 'c' },
+      ],
+      pinned: {
+        a: { x: 999, y: 999 },
+        b: { x: -999, y: -999 },
+      },
+    });
+    const { positions } = computeTopologicalLayout(input);
+
+    expect(positions['a']?.x).toBeLessThan(positions['c']?.x ?? 0);
+    expect(Math.sign((positions['a']?.y ?? 0) - (positions['b']?.y ?? 0))).toBe(
+      Math.sign((positions['d']?.y ?? 0) - (positions['c']?.y ?? 0)),
+    );
+    expect(positions['a']).not.toEqual({ x: 999, y: 999 });
+  });
+
+  it('相同输入确定性输出，且环会被压缩后完整布局', () => {
+    const input = request({
+      nodes: [node('a'), node('b'), node('c')],
+      edges: [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'a' },
+        { from: 'b', to: 'c' },
+      ],
+    });
+
+    expect(computeTopologicalLayout(input)).toEqual(computeTopologicalLayout(input));
+    expect(Object.keys(computeTopologicalLayout(input).positions).sort()).toEqual(['a', 'b', 'c']);
+    expect(computeLayout({ ...input, mode: 'topological' })).toEqual(
+      computeTopologicalLayout(input),
+    );
   });
 });

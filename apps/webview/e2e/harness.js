@@ -1,4 +1,5 @@
 (() => {
+  /* global setTimeout */
   const timestamp = '2026-08-11T00:00:00.000Z';
   const provenance = {
     kind: 'agent_declared',
@@ -158,9 +159,102 @@
     snapshot.coverage.unclassified = 3;
   }
 
+  // 独立覆盖三种绘图层级。日常 fixture 没有 group/file 节点，产品应隐藏无效果的
+  // 层级入口；这里补齐真实父子层级，验证分组与文件关系图确实改变图结构。
+  if (new URLSearchParams(window.location.search).get('levels') === '1') {
+    snapshot.document.nodes.find((node) => node.id === 'module.api').parentId = 'group.backend';
+    snapshot.document.nodes.find((node) => node.id === 'module.orders').parentId = 'group.backend';
+    snapshot.document.nodes.push(
+      {
+        ...common,
+        id: 'group.backend',
+        type: 'group',
+        label: 'Backend',
+        responsibility: 'Groups backend modules.',
+        paths: ['src/api', 'src/orders'],
+      },
+      {
+        ...common,
+        id: 'file.orders-index',
+        type: 'file',
+        label: 'src/orders/index.ts',
+        responsibility: 'Order module entry file.',
+        paths: ['src/orders/index.ts'],
+        parentId: 'module.orders',
+      },
+    );
+    snapshot.coverage.classified = 5;
+  }
+
+  // 对应真实 CRM 地图的密集模块拓扑：9 个模块、28 条声明关系，其中两组
+  // 同端点关系在模块层聚合为 26 根可见连线。用于防止“小图正常、大图丢线”。
+  if (new URLSearchParams(window.location.search).get('dense') === '1') {
+    const denseNodes = [
+      ['application-operations', '应用操作与 Server Functions', 'service'],
+      ['background-runtime', '后台任务与服务端能力', 'service'],
+      ['data-persistence', '数据模型与持久化', 'storage'],
+      ['delivery-assurance', '测试、交付与项目知识', 'group'],
+      ['domain-rules', '领域规则与流程', 'module'],
+      ['external-integrations', '外部服务适配', 'service'],
+      ['platform-foundations', '平台基础能力', 'module'],
+      ['product-surfaces', '产品界面与 HTTP 表面', 'module'],
+      ['runtime-entry', '运行时与应用入口', 'entry'],
+    ];
+    const denseEdges = [
+      ['assurance-verifies-system', 'delivery-assurance', 'runtime-entry'],
+      ['background-applies-domain', 'background-runtime', 'domain-rules'],
+      ['background-calls-integrations', 'background-runtime', 'external-integrations'],
+      ['background-data-flow', 'background-runtime', 'data-persistence'],
+      ['background-depends-platform', 'background-runtime', 'platform-foundations'],
+      ['data-depends-platform', 'data-persistence', 'platform-foundations'],
+      ['domain-calls-background', 'domain-rules', 'background-runtime'],
+      ['domain-calls-integrations', 'domain-rules', 'external-integrations'],
+      ['domain-depends-platform', 'domain-rules', 'platform-foundations'],
+      ['domain-read-data', 'domain-rules', 'data-persistence'],
+      ['domain-write-data', 'domain-rules', 'data-persistence'],
+      ['integrations-depend-platform', 'external-integrations', 'platform-foundations'],
+      ['integrations-write-data', 'external-integrations', 'data-persistence'],
+      ['operations-apply-domain', 'application-operations', 'domain-rules'],
+      ['operations-call-background', 'application-operations', 'background-runtime'],
+      ['operations-depend-platform', 'application-operations', 'platform-foundations'],
+      ['operations-read-data', 'application-operations', 'data-persistence'],
+      ['operations-write-data', 'application-operations', 'data-persistence'],
+      ['product-calls-background', 'product-surfaces', 'background-runtime'],
+      ['product-calls-domain', 'product-surfaces', 'domain-rules'],
+      ['product-calls-operations', 'product-surfaces', 'application-operations'],
+      ['product-data-flow', 'product-surfaces', 'data-persistence'],
+      ['product-depends-platform', 'product-surfaces', 'platform-foundations'],
+      ['runtime-calls-background', 'runtime-entry', 'background-runtime'],
+      ['runtime-calls-domain', 'runtime-entry', 'domain-rules'],
+      ['runtime-calls-operations', 'runtime-entry', 'application-operations'],
+      ['runtime-depends-platform', 'runtime-entry', 'platform-foundations'],
+      ['runtime-serves-product', 'runtime-entry', 'product-surfaces'],
+    ];
+    snapshot.document.nodes = denseNodes.map(([id, label, type]) => ({
+      ...common,
+      id,
+      label,
+      type,
+      responsibility: `${label} 的职责。`,
+      paths: [`src/${id}/index.ts`],
+    }));
+    snapshot.document.edges = denseEdges.map(([id, from, to], index) => ({
+      ...common,
+      id,
+      from,
+      to,
+      type: index % 3 === 0 ? 'calls' : index % 3 === 1 ? 'depends_on' : 'data_flow',
+      reason: `${from} 到 ${to}`,
+    }));
+    snapshot.coverage.classified = 9;
+    snapshot.coverage.unclassified = 0;
+  }
+
   window.__godViewCommands = [];
   window.__godViewSnapshot = snapshot;
   window.acquireVsCodeApi = () => ({
+    // Test harness intentionally routes every supported command in one host adapter.
+    // eslint-disable-next-line complexity
     postMessage(command) {
       window.__godViewCommands.push(command);
       if (command.type === 'ready' || command.type === 'requestSnapshot') {
@@ -168,160 +262,191 @@
           window.dispatchEvent(new MessageEvent('message', { data: snapshot }));
         });
       }
-      if (command.type === 'createAnnotation') {
-        const id = 'annotation.e2e';
-        const annotation = {
-          id,
-          type: command.annotationType,
-          status: 'sent',
-          target: { nodeIds: command.nodeIds, mapRevision: snapshot.document.revision },
-          messages: [
-            { id: `${id}.question`, author: 'user', body: command.body, createdAt: timestamp },
-          ],
-          createdAt: timestamp,
-        };
-        snapshot.document.annotations = [annotation];
-        snapshot.document.revision += 1;
+      if (command.type === 'ready' || command.type === 'refreshAgentStatus') {
         queueMicrotask(() => {
           window.dispatchEvent(
             new MessageEvent('message', {
               data: {
-                type: 'map/patch',
-                revision: snapshot.document.revision,
-                factsRevision: 1,
-                patch: {
-                  upsertedNodes: [],
-                  upsertedEdges: [],
-                  removedNodeIds: [],
-                  removedEdgeIds: [],
-                  upsertedAnnotations: [annotation],
-                },
-                drift: [],
+                type: 'agent/status',
+                selectedAgent: 'codex',
+                agents: [
+                  {
+                    agent: 'claude-code',
+                    displayName: 'Claude Code',
+                    installed: true,
+                    version: '2.1.228',
+                    configuration: 'missing',
+                    workspaceRoot: '/repo',
+                    detail: '尚未配置当前工作区的 MCP god-view。',
+                  },
+                  {
+                    agent: 'codex',
+                    displayName: 'Codex CLI',
+                    installed: true,
+                    version: 'codex-cli 0.147.0',
+                    configuration: 'current',
+                    workspaceRoot: '/repo',
+                    detail: 'MCP god-view 已由官方 get 命令复验。',
+                  },
+                ],
               },
             }),
           );
         });
       }
-      if (command.type === 'copyAnnotationTask') {
-        const current = snapshot.document.annotations.find(
-          (item) => item.id === command.annotationId,
-        );
-        if (current !== undefined) {
-          const answered = {
-            ...current,
-            status: 'answered',
-            messages: [
-              ...current.messages,
-              {
-                id: `${current.id}.answer`,
-                author: 'agent',
-                body: '<script>alert(1)</script> 支付授权在订单确认前完成。',
-                detail: '订单模块显式依赖支付服务。',
-                evidence: [
-                  {
-                    kind: 'explicit_import',
-                    location: { path: 'src/orders/index.ts', startLine: 12 },
-                  },
-                ],
-                createdAt: timestamp,
+      if (command.type === 'configureAgent') {
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              data: {
+                type: 'agent/status',
+                selectedAgent: command.agent,
+                agents: ['claude-code', 'codex'].map((agent) => ({
+                  agent,
+                  displayName: agent === 'codex' ? 'Codex CLI' : 'Claude Code',
+                  installed: true,
+                  version: agent === 'codex' ? 'codex-cli 0.147.0' : '2.1.228',
+                  configuration: 'current',
+                  workspaceRoot: '/repo',
+                  detail: 'MCP god-view 已由官方 get 命令复验。',
+                })),
               },
-            ],
-          };
-          snapshot.document.annotations = [answered];
-          snapshot.document.revision += 1;
-          queueMicrotask(() => {
+            }),
+          );
+        });
+      }
+      if (
+        command.type === 'startInitialization' ||
+        command.type === 'startReinitialization' ||
+        command.type === 'startMapCompletion'
+      ) {
+        const purpose =
+          command.type === 'startReinitialization'
+            ? 'reinitialization'
+            : command.type === 'startMapCompletion'
+              ? command.target === 'groups'
+                ? 'group_completion'
+                : 'file_completion'
+              : 'initialization';
+        const run = {
+          runId: 'run-e2e',
+          agent: command.agent,
+          state: 'running',
+          output: ['Agent 会话已建立。', '正在分析项目入口与数据流…'],
+          detail: 'Agent 已启动，正在分析项目…',
+          restartRequired: false,
+          purpose,
+        };
+        queueMicrotask(() => {
+          window.dispatchEvent(new MessageEvent('message', { data: { type: 'agent/run', run } }));
+          setTimeout(() => {
             window.dispatchEvent(
               new MessageEvent('message', {
                 data: {
-                  type: 'map/patch',
-                  revision: snapshot.document.revision,
-                  factsRevision: 1,
-                  patch: {
-                    upsertedNodes: [],
-                    upsertedEdges: [],
-                    removedNodeIds: [],
-                    removedEdgeIds: [],
-                    upsertedAnnotations: [answered],
+                  type: 'agent/run',
+                  run: {
+                    ...run,
+                    state: 'awaiting_input',
+                    detail: 'Agent 正在等待你的选择。',
+                    question: {
+                      question: '如何归类仓库中的工程文档？',
+                      options: [
+                        { id: 'group', label: '工程知识分组', description: '集中展示文档与规则。' },
+                        {
+                          id: 'unclassified',
+                          label: '保留未分类',
+                          description: '暂不声明语义归属。',
+                        },
+                      ],
+                    },
                   },
-                  drift: [],
                 },
               }),
             );
-          });
-        }
+          }, 20);
+        });
       }
-      if (command.type === 'resolveAnnotation') {
-        const current = snapshot.document.annotations.find(
-          (item) => item.id === command.annotationId,
-        );
-        if (current !== undefined) {
-          const resolved = { ...current, status: 'resolved', resolvedAt: timestamp };
-          snapshot.document.annotations = [resolved];
-          snapshot.document.revision += 1;
-          queueMicrotask(() => {
+      if (command.type === 'sendAgentMessage') {
+        const user = {
+          id: 'chat-user-e2e',
+          role: 'user',
+          body: command.message,
+          createdAt: timestamp,
+        };
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              data: {
+                type: 'agent/conversation',
+                conversation: {
+                  threadId: 'thread-e2e',
+                  agent: command.agent,
+                  state: 'running',
+                  activeRunId: 'chat-run-e2e',
+                  messages: [
+                    user,
+                    {
+                      id: 'chat-agent-live-e2e',
+                      role: 'agent',
+                      body: '正在读取最新项目地图…',
+                      createdAt: timestamp,
+                      runId: 'chat-run-e2e',
+                    },
+                  ],
+                },
+              },
+            }),
+          );
+          setTimeout(() => {
             window.dispatchEvent(
               new MessageEvent('message', {
                 data: {
-                  type: 'map/patch',
-                  revision: snapshot.document.revision,
-                  factsRevision: 1,
-                  patch: {
-                    upsertedNodes: [],
-                    upsertedEdges: [],
-                    removedNodeIds: [],
-                    removedEdgeIds: [],
-                    upsertedAnnotations: [resolved],
+                  type: 'agent/conversation',
+                  conversation: {
+                    threadId: 'thread-e2e',
+                    agent: command.agent,
+                    state: 'idle',
+                    messages: [
+                      user,
+                      {
+                        id: 'chat-agent-e2e',
+                        role: 'agent',
+                        body: '订单从 API 入口进入 Orders，再调用 Payments 完成授权。',
+                        createdAt: timestamp,
+                        runId: 'chat-run-e2e',
+                      },
+                    ],
                   },
-                  drift: [],
                 },
               }),
             );
-          });
-        }
+          }, 30);
+        });
       }
-      if (command.type === 'approveProposal') {
-        const current = snapshot.document.changeProposals.find(
-          (item) => item.id === command.proposalId,
-        );
-        if (current !== undefined) {
-          const approved = {
-            ...current,
-            status: 'approved',
-            approval: {
-              token: 'approval-e2e',
-              approvedScope: command.approvedScope,
-              permissionMode: 'monitored',
-              approvedAt: timestamp,
-              expiresAt: '2026-08-11T00:15:00.000Z',
-              branchKey: 'main',
-              mapRevision: snapshot.document.revision,
-              gitRevision: 'head-e2e',
-              preexistingChanges: [],
-            },
-          };
-          snapshot.document.changeProposals = [approved];
-          snapshot.document.revision += 1;
-          queueMicrotask(() => {
-            window.dispatchEvent(
-              new MessageEvent('message', {
-                data: {
-                  type: 'map/patch',
-                  revision: snapshot.document.revision,
-                  factsRevision: 1,
-                  patch: {
-                    upsertedNodes: [],
-                    upsertedEdges: [],
-                    removedNodeIds: [],
-                    removedEdgeIds: [],
-                    upsertedChangeProposals: [approved],
-                  },
-                  drift: [],
+      if (command.type === 'exportAgentConversation') {
+        window.__godViewConversationExported = true;
+      }
+      if (command.type === 'answerAgentQuestion') {
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              data: {
+                type: 'agent/run',
+                run: {
+                  runId: command.runId,
+                  agent: 'codex',
+                  state: 'completed',
+                  output: ['用户选择：group', '9 个模块与 8 条关系已写入并复验。'],
+                  detail: '首次建图任务已结束。',
+                  restartRequired: true,
                 },
-              }),
-            );
-          });
-        }
+              },
+            }),
+          );
+        });
       }
+      window.__godViewAnnotationHarness.handle(command, snapshot, timestamp);
+      window.__godViewApprovedChangeHarness.handle(command, snapshot, timestamp);
       if (command.type === 'rejectProposal') {
         const current = snapshot.document.changeProposals.find(
           (item) => item.id === command.proposalId,

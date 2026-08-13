@@ -42,6 +42,10 @@ export class LayoutClient {
     });
   }
 
+  async computeTopological(request: LayoutRequest): Promise<LayoutResult> {
+    return this.compute({ ...request, pinned: {}, mode: 'topological' });
+  }
+
   dispose(): void {
     this.#pending.clear();
     this.#worker?.terminate();

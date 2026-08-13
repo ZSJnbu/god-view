@@ -3,19 +3,129 @@ import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('application', { name: '项目地图' })).toBeVisible();
+  const graph = page.getByRole('application', { name: '项目地图' });
+  await expect(graph).toBeVisible();
+  await expect(graph).toHaveAttribute('data-rendered-nodes', '3');
+  await expect(graph).toHaveAttribute('data-visible-nodes', '3');
+  await expect(graph).toHaveAttribute('data-rendered-edges', '2');
+  await expect(graph).toHaveAttribute('data-visible-edges', '2');
+  const canvas = await graph.boundingBox();
+  expect(canvas?.height ?? 0).toBeGreaterThan(400);
+  await expect(page.getByText(/当前绘制 \d+ 个节点 · \d+ 根连线/u)).toBeVisible();
 });
 
-test('空地图可配置两种 Agent，并保留任务与手动接入入口', async ({ page }) => {
+test('常驻 Agent 对话在插件内实时回复，并保留明确的修改审批边界', async ({ page }) => {
+  const panel = page.getByRole('region', { name: '项目 Agent 对话' });
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText('普通对话只读');
+  await page.getByLabel('发送给项目 Agent').fill('订单数据如何流动？');
+  await page.getByRole('button', { name: '发送' }).click();
+  await expect(panel).toContainText('正在读取最新项目地图…');
+  await expect(panel).toContainText('订单从 API 入口进入 Orders，再调用 Payments 完成授权。');
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toContainEqual({
+    type: 'sendAgentMessage',
+    agent: 'codex',
+    message: '订单数据如何流动？',
+    mode: 'chat',
+  });
+});
+
+test('Agent 对话可导出，并可在停靠面板与可拖动缩放浮窗间切换', async ({ page }) => {
+  await page.getByLabel('发送给项目 Agent').fill('记录这次诊断');
+  await page.getByRole('button', { name: '发送' }).click();
+  await expect(page.getByRole('button', { name: '导出对话' })).toBeEnabled();
+  await page.getByRole('button', { name: '导出对话' }).click();
+  await page.getByRole('button', { name: '浮动窗口' }).click();
+
+  const floating = page.getByTestId('agent-floating-pane');
+  await expect(floating).toBeVisible();
+  const before = await floating.boundingBox();
+  const titlebar = page.getByRole('toolbar', { name: 'Agent 浮窗标题栏' });
+  await expect(titlebar).toContainText('按住此标题栏拖动');
+  const dragHandle = await titlebar.boundingBox();
+  expect(dragHandle).not.toBeNull();
+  if (dragHandle !== null && before !== null) {
+    await page.mouse.move(
+      dragHandle.x + dragHandle.width / 2,
+      dragHandle.y + dragHandle.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      dragHandle.x + dragHandle.width / 2 + 90,
+      dragHandle.y + dragHandle.height / 2 + 55,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    const moved = await floating.boundingBox();
+    expect((moved?.x ?? 0) - before.x).toBeGreaterThan(70);
+    expect((moved?.y ?? 0) - before.y).toBeGreaterThan(40);
+  }
+  const movedBeforeKeyboard = await floating.boundingBox();
+  await titlebar.focus();
+  await page.keyboard.press('ArrowLeft');
+  const movedAfterKeyboard = await floating.boundingBox();
+  expect((movedBeforeKeyboard?.x ?? 0) - (movedAfterKeyboard?.x ?? 0)).toBeGreaterThanOrEqual(11);
+
+  const resizer = page.getByRole('separator', { name: '调整 Agent 浮窗大小' });
+  const handle = await resizer.boundingBox();
+  expect(before).not.toBeNull();
+  expect(handle).not.toBeNull();
+  if (handle !== null) {
+    await page.mouse.move(handle.x + 8, handle.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + 88, handle.y + 68, { steps: 4 });
+    await page.mouse.up();
+  }
+  const after = await floating.boundingBox();
+  expect((after?.width ?? 0) - (movedAfterKeyboard?.width ?? 0)).toBeGreaterThan(60);
+  expect((after?.height ?? 0) - (movedAfterKeyboard?.height ?? 0)).toBeGreaterThan(45);
+
+  await page.getByRole('button', { name: '停靠底部' }).click();
+  await expect(floating).toHaveCount(0);
+  await expect(page.getByTestId('agent-pane')).toBeVisible();
+
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toEqual(
+    expect.arrayContaining([
+      { type: 'exportAgentConversation' },
+      expect.objectContaining({
+        type: 'saveAgentPaneView',
+        view: expect.objectContaining({ mode: 'floating' }),
+      }),
+      expect.objectContaining({
+        type: 'saveAgentPaneView',
+        view: expect.objectContaining({ mode: 'docked' }),
+      }),
+    ]),
+  );
+});
+
+test('空地图显示已配置状态并完成自动 Agent 输出与选择闭环', async ({ page }) => {
   await page.goto('/?empty=1');
   await expect(
     page.getByRole('heading', { name: '让 Agent 基于代码事实创建第一版地图' }),
   ).toBeVisible();
   await expect(page.getByText('等待归类').locator('..')).toContainText('3');
 
+  await expect(page.getByRole('button', { name: '✓ Codex' })).toBeVisible();
+  await expect(page.getByText('✓ 当前工作区已配置并复验')).toBeVisible();
   await page.getByRole('button', { name: '配置 Claude Code' }).click();
-  await page.getByRole('button', { name: '配置 Codex' }).click();
-  await page.getByRole('button', { name: '生成初始化任务' }).click();
+  await expect(page.getByRole('button', { name: '✓ Claude Code' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: /Claude Code/u })).toBeChecked();
+  await page.getByRole('radio', { name: /Codex CLI/u }).check();
+  await expect(page.getByRole('radio', { name: /Codex CLI/u })).toBeChecked();
+  await page.getByRole('button', { name: '启动首次建图' }).click();
+  await expect(page.getByText('正在分析项目入口与数据流…')).toBeVisible();
+  await expect(page.getByText('如何归类仓库中的工程文档？')).toBeVisible();
+  await page.getByRole('radio', { name: /工程知识分组/u }).check();
+  await page.getByRole('button', { name: '继续' }).click();
+  await expect(page.getByText(/请退出并重启其他已打开的 Agent 会话/u)).toBeVisible();
+  await page.getByRole('button', { name: '复制手动任务' }).click();
   await page.getByRole('button', { name: '复制手动接入命令' }).click();
 
   const commands = await page.evaluate(
@@ -24,7 +134,8 @@ test('空地图可配置两种 Agent，并保留任务与手动接入入口', as
   expect(commands).toEqual(
     expect.arrayContaining([
       { type: 'configureAgent', agent: 'claude-code' },
-      { type: 'configureAgent', agent: 'codex' },
+      { type: 'startInitialization', agent: 'codex' },
+      { type: 'answerAgentQuestion', runId: 'run-e2e', answer: 'group' },
       { type: 'generateAgentTask' },
       { type: 'copyAgentSetup' },
     ]),
@@ -38,14 +149,235 @@ test('搜索、定位、聚焦并返回源码命令形成完整浏览链路', as
 
   await expect(page.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible();
   await expect(page.getByText('Validates and persists customer orders.')).toBeVisible();
-  await page.getByRole('button', { name: '聚焦邻域' }).click();
-  await expect(page.getByRole('button', { name: '1 层邻域' })).toBeVisible();
-
   await page.getByRole('button', { name: 'src/orders/index.ts', exact: true }).first().click();
+  await page.getByRole('button', { name: '只看相关模块' }).click();
+  await expect(page.getByRole('button', { name: '相关 1 层' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '当前地图视图' })).toContainText('局部视图');
+  await page
+    .getByRole('navigation', { name: '当前地图视图' })
+    .getByRole('button', { name: '返回模块关系图' })
+    .click();
+  await expect(page.getByRole('navigation', { name: '当前地图视图' })).toContainText('模块关系图');
+  await expect(page.getByRole('button', { name: '相关 1 层' })).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: '详情' })).toHaveCount(0);
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
   );
   expect(commands).toContainEqual({ type: 'openSource', path: 'src/orders/index.ts' });
+});
+
+test('详情作为可关闭浮层，不改变画布尺寸', async ({ page }) => {
+  const canvas = page.getByRole('application', { name: '项目地图' });
+  const before = await canvas.boundingBox();
+  await page.getByRole('searchbox', { name: '搜索节点' }).fill('Orders');
+  await page.getByRole('button', { name: /Orders/u }).click();
+  const after = await canvas.boundingBox();
+
+  expect(after).toEqual(before);
+  await expect(page.getByRole('complementary', { name: '详情' })).toBeVisible();
+  await page.getByRole('button', { name: '关闭详情' }).click();
+  await expect(page.getByRole('complementary', { name: '详情' })).toHaveCount(0);
+  await expect(page.getByRole('searchbox', { name: '搜索节点' })).toHaveValue('');
+});
+
+test('切换层级使用可中断的连续动画，而不是让模块瞬间消失出现', async ({ page }) => {
+  await page.goto('/?levels=1');
+  const canvas = page.getByRole('application', { name: '项目地图' });
+  await expect(canvas).toHaveAttribute('aria-busy', 'false');
+
+  await page.getByRole('radio', { name: '分组概览' }).click();
+  await expect(canvas).toHaveAttribute('aria-busy', 'true');
+  // 动画尚未完成时切到另一层，必须从当前画面接管而不是排队。
+  await page.getByRole('radio', { name: '文件关系图' }).click();
+  await expect(canvas).toHaveAttribute('aria-busy', 'false', { timeout: 2000 });
+  await expect(canvas).toHaveAttribute('data-visible-nodes', '5');
+  await expect(canvas).toHaveAttribute('data-visible-edges', '2');
+  await expect(page.getByRole('navigation', { name: '当前地图视图' })).toContainText('文件关系图');
+});
+
+test('没有分组或文件节点时提供 AI 增量补全入口', async ({ page }) => {
+  await expect(page.getByRole('radio', { name: '模块关系图' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: '分组概览' })).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: '文件关系图' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '＋ AI 补全分组层级' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '＋ AI 补全关键文件关系' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '当前地图视图' })).toContainText(
+    '点击模块可在右侧查看职责、文件路径和标注',
+  );
+
+  await page.getByRole('button', { name: '＋ AI 补全关键文件关系' }).click();
+  await expect(page.getByRole('region', { name: 'Agent 关键文件关系补全进度' })).toBeVisible();
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toContainEqual({
+    type: 'startMapCompletion',
+    agent: 'codex',
+    target: 'files',
+  });
+});
+
+test('点击模块后保留全图并恢复所有关系可见性', async ({ page }) => {
+  const canvas = page.getByRole('application', { name: '项目地图' });
+  await page.getByRole('searchbox', { name: '搜索节点' }).fill('Orders');
+  await page.getByRole('button', { name: /Orders/u }).click();
+
+  await expect(canvas).toHaveAttribute('data-rendered-nodes', '3');
+  await expect(canvas).toHaveAttribute('data-visible-nodes', '3');
+  await expect(canvas).toHaveAttribute('data-rendered-edges', '2');
+  await expect(canvas).toHaveAttribute('data-visible-edges', '2');
+  await expect(page.getByText('当前绘制 3 个节点 · 2 根连线')).toBeVisible();
+});
+
+test('真实密集拓扑在点击和连续重绘后仍显示全部模块与连线', async ({ page }) => {
+  await page.goto('/?dense=1');
+  const canvas = page.getByRole('application', { name: '项目地图' });
+  await expect(canvas).toHaveAttribute('data-rendered-nodes', '9');
+  await expect(canvas).toHaveAttribute('data-visible-nodes', '9');
+  await expect(canvas).toHaveAttribute('data-rendered-edges', '26');
+  await expect(canvas).toHaveAttribute('data-visible-edges', '26');
+  await expect(canvas).toHaveAttribute('data-node-overlaps', '0');
+  await expect(canvas).toHaveAttribute('data-module-colors', '9');
+  await expect(canvas).toHaveAttribute('data-inline-edge-labels', 'false');
+  await expect(canvas).not.toHaveAttribute('data-edge-bridges', '0');
+  await expect(page.getByText('当前绘制 9 个节点 · 26 根连线（汇总 28 条关系）')).toBeVisible();
+
+  await page.getByRole('searchbox', { name: '搜索节点' }).fill('测试');
+  await page.getByRole('button', { name: /测试、交付与项目知识/u }).click();
+  await page.getByRole('button', { name: '拓扑排序' }).click();
+  await expect(canvas).toHaveAttribute('aria-busy', 'false', { timeout: 2_000 });
+  await expect(canvas).toHaveAttribute('data-visible-nodes', '9');
+  await expect(canvas).toHaveAttribute('data-visible-edges', '26');
+  await expect(canvas).toHaveAttribute('data-node-overlaps', '0');
+});
+
+test('模块高亮不再批量绘制黑色关系标签背景', async ({ page }) => {
+  await page.goto('/?dense=1');
+  const canvas = page.getByRole('application', { name: '项目地图' });
+  await expect(canvas).toHaveAttribute('data-inline-edge-labels', 'false');
+
+  const cytoscapeCanvas = page.locator('.canvas__surface canvas').last();
+  const box = await cytoscapeCanvas.boundingBox();
+  expect(box).not.toBeNull();
+  if (box === null) return;
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+
+  // 模块悬停只高亮关系；关系说明只能由单根线触发独立 tooltip。
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect(canvas).toHaveAttribute('data-visible-edges', '26');
+});
+
+test('拖动模块后重新布线仍保留全部模块与关系', async ({ page }) => {
+  await page.goto('/?dense=1');
+  const canvas = page.getByRole('application', { name: '项目地图' });
+  await expect(canvas).toHaveAttribute('data-visible-edges', '26');
+
+  const movable = page.locator('.canvas__surface canvas').last();
+  const box = await movable.boundingBox();
+  expect(box).not.toBeNull();
+  if (box === null) return;
+  // 从真实画布中的模块中心拖动，触发 Cytoscape dragfreeon 与完整线路重算。
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.29);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.4, { steps: 10 });
+  await page.mouse.up();
+
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toEqual(
+    expect.arrayContaining([expect.objectContaining({ type: 'saveLayout' })]),
+  );
+  await expect(canvas).toHaveAttribute('data-rendered-nodes', '9');
+  await expect(canvas).toHaveAttribute('data-visible-nodes', '9');
+  await expect(canvas).toHaveAttribute('data-rendered-edges', '26');
+  await expect(canvas).toHaveAttribute('data-visible-edges', '26');
+});
+
+test('拓扑排序整理手工坐标、保存结果并保持线路避障', async ({ page }) => {
+  await page.goto('/?dense=1');
+  const canvas = page.getByRole('application', { name: '项目地图' });
+  const crossingsBefore = Number(await canvas.getAttribute('data-edge-crossings'));
+  await expect(page.getByRole('button', { name: '拓扑排序' })).toBeVisible();
+  await page.getByRole('button', { name: '拓扑排序' }).click();
+
+  await expect(canvas).toHaveAttribute('data-topology-revision', '1', { timeout: 2_000 });
+  await expect(canvas).toHaveAttribute('aria-busy', 'false', { timeout: 2_000 });
+  await expect(canvas).toHaveAttribute('data-visible-nodes', '9');
+  await expect(canvas).toHaveAttribute('data-visible-edges', '26');
+  await expect(canvas).toHaveAttribute('data-edge-node-intersections', '0');
+  await expect(canvas).toHaveAttribute('data-edge-overlapping-pairs', '0');
+  await expect(canvas).toHaveAttribute('data-node-overlaps', '0');
+  const crossings = Number(await canvas.getAttribute('data-edge-crossings'));
+  const bridges = Number(await canvas.getAttribute('data-edge-bridges'));
+  expect(crossings).toBeLessThanOrEqual(40);
+  expect(bridges).toBeGreaterThan(0);
+  expect(crossingsBefore).toBeGreaterThanOrEqual(0);
+  await expect(page.getByLabel('关系线说明')).toContainText('箭头指向被调用或依赖方');
+  await expect(page.getByLabel('关系线说明')).toContainText('拱桥表示交叉但不相连');
+
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toEqual(
+    expect.arrayContaining([expect.objectContaining({ type: 'saveLayout' })]),
+  );
+});
+
+test('已有地图可由当前 Agent 重新初始化，并保留地图直到重绘完成', async ({ page }) => {
+  await expect(page.getByRole('button', { name: '重新初始化' })).toBeVisible();
+  await page.getByRole('button', { name: '重新初始化' }).click();
+  await expect(page.getByRole('application', { name: '项目地图' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Agent 重新初始化进度' })).toContainText(
+    '重新初始化',
+  );
+
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toContainEqual({ type: 'startReinitialization', agent: 'codex' });
+});
+
+test('地图与 Agent 输出视窗可拖动和键盘调整，并保存用户高度', async ({ page }) => {
+  await page.getByRole('button', { name: '重新初始化' }).click();
+  const separator = page.getByRole('separator', { name: '调整地图与 Agent 输出的高度' });
+  const pane = page.getByTestId('agent-pane');
+  const canvas = page.getByRole('application', { name: '项目地图' });
+  const graphSummary = page.getByText(/当前绘制 \d+ 个节点 · \d+ 根连线/u);
+  await expect(separator).toBeVisible();
+  const summaryBefore = await graphSummary.textContent();
+
+  const paneBefore = await pane.boundingBox();
+  const canvasBefore = await canvas.boundingBox();
+  const handle = await separator.boundingBox();
+  expect(paneBefore).not.toBeNull();
+  expect(canvasBefore).not.toBeNull();
+  expect(handle).not.toBeNull();
+  if (handle === null) return;
+
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y - 100, { steps: 5 });
+  await page.mouse.up();
+
+  const paneAfter = await pane.boundingBox();
+  const canvasAfter = await canvas.boundingBox();
+  expect((paneAfter?.height ?? 0) - (paneBefore?.height ?? 0)).toBeGreaterThan(80);
+  expect((canvasBefore?.height ?? 0) - (canvasAfter?.height ?? 0)).toBeGreaterThan(80);
+  await expect(graphSummary).toHaveText(summaryBefore ?? '');
+
+  await separator.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(separator).toHaveAttribute(
+    'aria-valuenow',
+    String(Math.round((paneAfter?.height ?? 0) - 24)),
+  );
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toEqual(
+    expect.arrayContaining([expect.objectContaining({ type: 'saveAgentPaneHeight' })]),
+  );
 });
 
 test('关键界面无 axe critical 或 serious 问题', async ({ page }) => {
@@ -57,12 +389,13 @@ test('关键界面无 axe critical 或 serious 问题', async ({ page }) => {
 });
 
 test('键盘可依次到达层级、搜索和画布操作', async ({ page }) => {
+  await page.goto('/?levels=1');
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('radio', { name: '远景 · 分组' })).toBeFocused();
+  await expect(page.getByRole('radio', { name: '分组概览' })).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('radio', { name: '中景 · 模块' })).toBeFocused();
+  await expect(page.getByRole('radio', { name: '模块关系图' })).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('radio', { name: '近景 · 文件' })).toBeFocused();
+  await expect(page.getByRole('radio', { name: '文件关系图' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('searchbox', { name: '搜索节点' })).toBeFocused();
 });
@@ -86,17 +419,26 @@ test('创建解释标注、预览上下文、接收安全答案并解决', async
   await page.getByRole('searchbox', { name: '搜索节点' }).fill('Orders');
   await page.getByRole('button', { name: /Orders/u }).click();
   await expect(page.getByRole('heading', { name: '原位标注' })).toBeVisible();
-  await expect(page.getByText('发送前预览（只含路径，不含源码）')).toBeVisible();
+  await expect(page.getByText(/随标注发送的路径/u)).toBeVisible();
+  await page.getByRole('button', { name: '创建解释标注' }).click();
+  await expect(page.getByRole('alert')).toContainText('请先写下');
+  await expect(page.getByLabel('内容')).toBeFocused();
   await page.getByLabel('内容').fill('为什么订单依赖支付？');
-  await page.getByRole('button', { name: '创建标注' }).click();
+  await page.getByRole('button', { name: '创建解释标注' }).click();
+  await expect(page.getByText(/标注已创建；已配置 Agent/u)).toBeVisible();
   await expect(page.getByText('为什么订单依赖支付？')).toBeVisible();
-
-  await page.getByRole('button', { name: '复制解释任务' }).click();
+  const run = page.getByRole('region', { name: 'Agent 标注解释子线程进度' });
+  await expect(run).toBeVisible();
+  await expect(run).toContainText('正在读取地图与允许的代码位置');
+  await expect(page.getByRole('button', { name: /复制手动任务/u })).toHaveCount(0);
+  await expect(run).toContainText('已读取权威地图：r3 · 3 个节点 · 2 条关系');
+  await expect(run).not.toContainText('unclassifiedPaths');
+  await expect(run).toContainText('answer_annotation 已接受', { timeout: 2_000 });
   await expect(
     page.getByText('<script>alert(1)</script> 支付授权在订单确认前完成。'),
   ).toBeVisible();
-  // 页面固定只有 harness 与应用两个外链脚本；答案中的标签必须作为文本，不能生成第三个脚本节点。
-  expect(await page.locator('script').count()).toBe(2);
+  // 页面固定只有两个 harness 与应用三个外链脚本；答案中的标签必须作为文本，不能生成额外脚本节点。
+  expect(await page.locator('script').count()).toBe(4);
   await page.getByText('详情与证据').click();
   await expect(
     page
@@ -115,14 +457,14 @@ test('创建解释标注、预览上下文、接收安全答案并解决', async
         type: 'createAnnotation',
         annotationType: 'explain',
         nodeIds: ['module.orders'],
+        autoAnswerAgent: 'codex',
       }),
-      { type: 'copyAnnotationTask', annotationId: 'annotation.e2e' },
       { type: 'resolveAnnotation', annotationId: 'annotation.e2e' },
     ]),
   );
 });
 
-test('修改方案可缩小范围、明确批准并交接授权任务', async ({ page }) => {
+test('修改方案批准后在插件内编辑代码并同步模块关系视图', async ({ page }) => {
   await page.getByRole('searchbox', { name: '搜索节点' }).fill('Orders');
   await page.getByRole('button', { name: /Orders/u }).click();
   await page.evaluate(() => {
@@ -199,7 +541,20 @@ test('修改方案可缩小范围、明确批准并交接授权任务', async ({
   await page.getByLabel('src/orders/index.test.ts').uncheck();
   await page.getByRole('button', { name: '明确批准所选范围' }).click();
   await expect(page.getByText(/当前为 monitored 模式/u)).toBeVisible();
-  await page.getByRole('button', { name: '复制已批准修改任务' }).click();
+  const run = page.getByRole('region', { name: 'Agent 项目编辑子线程进度' });
+  await expect(run).toBeVisible();
+  await expect(run).toContainText('正在编辑 src/orders/index.ts');
+  await expect(run).toContainText('正在更新 Orders 模块和支付依赖关系');
+  await expect(run).toContainText('complete_change 已接受', { timeout: 2_000 });
+  await expect(page.getByRole('complementary', { name: 'ChangeSet Diff 审查' })).toContainText(
+    'src/orders/index.ts',
+  );
+  await expect(page.getByRole('region', { name: '地图同步结果' })).toContainText('module.orders');
+  await expect(page.getByRole('region', { name: '地图同步结果' })).toContainText(
+    'edge.orders-payments',
+  );
+  await expect(page.getByText(/Validates orders, authorizes payment/u)).toBeVisible();
+  await expect(page.getByRole('button', { name: /复制已批准任务/u })).toHaveCount(0);
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
   );
@@ -207,10 +562,7 @@ test('修改方案可缩小范围、明确批准并交接授权任务', async ({
     type: 'approveProposal',
     proposalId: 'proposal.change',
     approvedScope: ['src/orders/index.ts'],
-  });
-  expect(commands).toContainEqual({
-    type: 'copyApprovedChangeTask',
-    proposalId: 'proposal.change',
+    autoStartAgent: 'codex',
   });
 });
 
@@ -395,6 +747,7 @@ test('活动 ChangeSet 可由用户停止并保留当前 Diff', async ({ page })
       }),
     );
   });
+  await expect(page.getByRole('button', { name: '重新初始化' })).toBeDisabled();
   await page.getByRole('button', { name: '停止并保留 Diff' }).click();
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,

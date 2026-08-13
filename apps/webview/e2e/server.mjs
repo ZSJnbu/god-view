@@ -10,6 +10,14 @@ const port = 41739;
 const routes = new Map([
   ['/', { path: join(here, 'index.html'), type: 'text/html; charset=utf-8' }],
   ['/harness.js', { path: join(here, 'harness.js'), type: 'text/javascript; charset=utf-8' }],
+  [
+    '/annotation-harness.js',
+    { path: join(here, 'annotation-harness.js'), type: 'text/javascript; charset=utf-8' },
+  ],
+  [
+    '/approved-change-harness.js',
+    { path: join(here, 'approved-change-harness.js'), type: 'text/javascript; charset=utf-8' },
+  ],
   ['/index.js', { path: join(webviewDist, 'index.js'), type: 'text/javascript; charset=utf-8' }],
   ['/index.css', { path: join(webviewDist, 'index.css'), type: 'text/css; charset=utf-8' }],
   [

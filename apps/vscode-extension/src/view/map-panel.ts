@@ -1,13 +1,15 @@
+/* eslint-disable max-lines -- VS Code webview host keeps command authorization and panel lifecycle together. */
 import { randomBytes } from 'node:crypto';
-import type { ChangeProposal } from '@god-view/protocol';
 import {
   commands,
   env,
+  FileType,
   Range,
   Selection,
   Uri,
   ViewColumn,
   window,
+  workspace,
   type ExtensionContext,
   type Webview,
   type WebviewPanel,
@@ -19,11 +21,25 @@ import {
 } from '@god-view/webview-bridge';
 import type { Logger } from '../logger.js';
 import type { MapService } from '../engine/map-service.js';
+import type { AgentInitializationRunner } from '../agent-initialization-runner.js';
 import { resolveWorkspacePath } from '../workspace/workspace-identity.js';
 import { routeMapUpdate } from './map-update-event.js';
 import { commandIds } from '../constants.js';
 import { formatAnnotationTask } from '../engine/annotation-context.js';
-import { layoutStateKey } from '../workspace-data.js';
+import { agentPaneHeightKey, agentPaneViewKey, layoutStateKey } from '../workspace-data.js';
+import {
+  agentConversationFileName,
+  serializeAgentConversation,
+} from '../agent-conversation-export.js';
+import { purposeForCommand } from './agent-command-purpose.js';
+import {
+  formatApprovedChangeTask,
+  isAgentCommand,
+  isAnnotationOrProposalCommand,
+  isChangeCommand,
+  isHostCommand,
+  isSnapshotCommand,
+} from './map-panel-commands.js';
 
 type LayoutPositions = Record<string, { x: number; y: number }>;
 
@@ -41,6 +57,8 @@ export class MapPanel {
   readonly #context: ExtensionContext;
   readonly #service: MapService;
   readonly #logger: Logger;
+  readonly #agentRunner: AgentInitializationRunner;
+  readonly #refreshAgentStatus: () => Promise<void>;
   readonly #disposables: { dispose(): void }[] = [];
 
   private constructor(
@@ -48,11 +66,15 @@ export class MapPanel {
     context: ExtensionContext,
     service: MapService,
     logger: Logger,
+    agentRunner: AgentInitializationRunner,
+    refreshAgentStatus: () => Promise<void>,
   ) {
     this.#panel = panel;
     this.#context = context;
     this.#service = service;
     this.#logger = logger;
+    this.#agentRunner = agentRunner;
+    this.#refreshAgentStatus = refreshAgentStatus;
 
     this.#panel.webview.options = {
       enableScripts: true,
@@ -77,7 +99,13 @@ export class MapPanel {
     });
   }
 
-  static show(context: ExtensionContext, service: MapService, logger: Logger): MapPanel {
+  static show(
+    context: ExtensionContext,
+    service: MapService,
+    logger: Logger,
+    agentRunner: AgentInitializationRunner,
+    refreshAgentStatus: () => Promise<void>,
+  ): MapPanel {
     const existing = MapPanel.#current;
     if (existing !== undefined) {
       existing.#panel.reveal(ViewColumn.Active);
@@ -88,7 +116,7 @@ export class MapPanel {
       retainContextWhenHidden: true,
       localResourceRoots: [Uri.joinPath(context.extensionUri, 'dist', 'webview')],
     });
-    const created = new MapPanel(panel, context, service, logger);
+    const created = new MapPanel(panel, context, service, logger, agentRunner, refreshAgentStatus);
     MapPanel.#current = created;
     return created;
   }
@@ -99,12 +127,14 @@ export class MapPanel {
     context: ExtensionContext,
     service: MapService,
     logger: Logger,
+    agentRunner: AgentInitializationRunner,
+    refreshAgentStatus: () => Promise<void>,
   ): MapPanel {
     const existing = MapPanel.#current;
     if (existing !== undefined && existing.#panel !== panel) {
       existing.dispose();
     }
-    const restored = new MapPanel(panel, context, service, logger);
+    const restored = new MapPanel(panel, context, service, logger, agentRunner, refreshAgentStatus);
     MapPanel.#current = restored;
     return restored;
   }
@@ -115,10 +145,19 @@ export class MapPanel {
     if (current !== undefined) current.#panel.dispose();
   }
 
+  /** 向当前地图面板推送扩展侧状态；面板未打开时安全忽略。 */
+  static postToCurrent(event: ExtensionEvent): void {
+    MapPanel.#current?.post(event);
+  }
+
   /** 让 Webview 聚焦到某个节点，用于「Reveal in God View」。 */
   focusNode(nodeId: string): void {
     this.#panel.reveal(ViewColumn.Active);
     this.#post({ type: 'status', state: 'idle', detail: `focus:${nodeId}` });
+  }
+
+  post(event: ExtensionEvent): void {
+    this.#post(event);
   }
 
   dispose(): void {
@@ -141,43 +180,264 @@ export class MapPanel {
     }
     if (isSnapshotCommand(parsed.value)) {
       this.#sendSnapshot();
+      await this.#refreshAgentStatus();
       return;
     }
     if (isChangeCommand(parsed.value)) {
       await this.#handleChangeCommand(parsed.value);
       return;
     }
-    switch (parsed.value.type) {
-      case 'openSource':
-        await this.#handleFileCommand(parsed.value);
-        return;
-      case 'saveLayout':
-        // 用户布局按 workspace + branch 保存，Agent 更新语义时不得覆盖它。
-        await this.#context.workspaceState.update(
-          this.#layoutKey(),
-          parsed.value.positions satisfies LayoutPositions,
-        );
-        return;
-      case 'generateAgentTask':
-        await commands.executeCommand(commandIds.generateAgentTask);
-        return;
-      case 'copyAgentSetup':
-        await commands.executeCommand(commandIds.copyAgentSetup);
-        return;
-      case 'configureAgent':
-        await commands.executeCommand(commandIds.configureAgent, parsed.value.agent);
-        return;
-      case 'createAnnotation':
-      case 'resolveAnnotation':
-      case 'copyAnnotationTask':
-        await this.#handleAnnotationCommand(parsed.value);
-        return;
-      case 'approveProposal':
-      case 'rejectProposal':
-      case 'copyApprovedChangeTask':
-        await this.#handleProposalCommand(parsed.value);
-        return;
+    if (isAgentCommand(parsed.value)) {
+      await this.#handleAgentCommand(parsed.value);
+      return;
     }
+    if (isAnnotationOrProposalCommand(parsed.value)) {
+      await this.#handleAnnotationOrProposalCommand(parsed.value);
+      return;
+    }
+    if (isHostCommand(parsed.value)) {
+      await this.#handleHostCommand(parsed.value);
+      return;
+    }
+    if (parsed.value.type === 'openSource') return this.#handleFileCommand(parsed.value);
+    if (parsed.value.type === 'saveAgentPaneHeight') {
+      await this.#context.workspaceState.update(
+        agentPaneHeightKey(this.#service.snapshot.workspaceId),
+        parsed.value.height,
+      );
+      return;
+    }
+    if (parsed.value.type === 'saveAgentPaneView') {
+      await this.#context.workspaceState.update(
+        agentPaneViewKey(this.#service.snapshot.workspaceId),
+        parsed.value.view,
+      );
+      return;
+    }
+    await this.#context.workspaceState.update(
+      this.#layoutKey(),
+      parsed.value.positions satisfies LayoutPositions,
+    );
+  }
+
+  async #handleAnnotationOrProposalCommand(
+    command: Extract<
+      WebviewCommand,
+      {
+        type:
+          | 'createAnnotation'
+          | 'resolveAnnotation'
+          | 'copyAnnotationTask'
+          | 'approveProposal'
+          | 'rejectProposal'
+          | 'copyApprovedChangeTask';
+      }
+    >,
+  ): Promise<void> {
+    if (['createAnnotation', 'resolveAnnotation', 'copyAnnotationTask'].includes(command.type)) {
+      return this.#handleAnnotationCommand(
+        command as Extract<
+          WebviewCommand,
+          { type: 'createAnnotation' | 'resolveAnnotation' | 'copyAnnotationTask' }
+        >,
+      );
+    }
+    return this.#handleProposalCommand(
+      command as Extract<
+        WebviewCommand,
+        { type: 'approveProposal' | 'rejectProposal' | 'copyApprovedChangeTask' }
+      >,
+    );
+  }
+
+  async #handleHostCommand(
+    command: Extract<
+      WebviewCommand,
+      {
+        type: 'generateAgentTask' | 'copyAgentSetup' | 'configureAgent' | 'exportAgentConversation';
+      }
+    >,
+  ): Promise<void> {
+    if (command.type === 'exportAgentConversation') {
+      await this.#exportAgentConversation();
+      return;
+    }
+    if (command.type === 'configureAgent') {
+      await commands.executeCommand(commandIds.configureAgent, command.agent);
+      return;
+    }
+    await commands.executeCommand(
+      command.type === 'generateAgentTask'
+        ? commandIds.generateAgentTask
+        : commandIds.copyAgentSetup,
+    );
+  }
+
+  // eslint-disable-next-line complexity -- discriminated command router delegates stateful branches immediately.
+  async #handleAgentCommand(
+    command: Extract<
+      WebviewCommand,
+      {
+        type:
+          | 'refreshAgentStatus'
+          | 'startInitialization'
+          | 'startReinitialization'
+          | 'startMapCompletion'
+          | 'startAnnotationAnswer'
+          | 'startApprovedChange'
+          | 'answerAgentQuestion'
+          | 'cancelAgentRun'
+          | 'sendAgentMessage';
+      }
+    >,
+  ): Promise<void> {
+    if (command.type === 'refreshAgentStatus') return this.#refreshAgentStatus();
+    if (command.type === 'sendAgentMessage') {
+      return this.#handleConversationMessage(command);
+    }
+    if (command.type === 'answerAgentQuestion') {
+      if (!this.#agentRunner.answer(command.runId, command.answer))
+        this.#post({ type: 'error', code: 'AGENT_ANSWER_REJECTED', message: '该问题已失效' });
+      return;
+    }
+    if (command.type === 'cancelAgentRun') {
+      if (!this.#agentRunner.cancel(command.runId))
+        this.#post({ type: 'error', code: 'AGENT_CANCEL_REJECTED', message: '任务已结束' });
+      return;
+    }
+    if (command.type === 'startAnnotationAnswer') {
+      await this.#startAnnotationAnswer(command.agent, command.annotationId);
+      return;
+    }
+    if (command.type === 'startApprovedChange') {
+      await this.#startApprovedChange(command.agent, command.proposalId);
+      return;
+    }
+    const purpose = purposeForCommand(command);
+    if (purpose !== 'initialization' && !this.#canStartExistingMapTask()) return;
+    if (purpose === 'reinitialization' && !(await this.#confirmReinitialization())) return;
+    const started = await this.#agentRunner.start(command.agent, purpose);
+    if (started === 'started') return;
+    this.#post({
+      type: 'error',
+      code: started === 'active' ? 'AGENT_RUN_ACTIVE' : 'AGENT_NOT_READY',
+      message:
+        started === 'active'
+          ? '已有地图任务正在运行'
+          : 'Agent 配置尚未通过当前工作区复验，请刷新或重新配置',
+    });
+  }
+
+  async #handleConversationMessage(
+    command: Extract<WebviewCommand, { type: 'sendAgentMessage' }>,
+  ): Promise<void> {
+    if (command.mode === 'change') {
+      const nodeIds = command.nodeIds?.filter((id) => this.#service.snapshot.nodes.has(id)) ?? [];
+      if (nodeIds.length === 0) {
+        this.#post({
+          type: 'error',
+          code: 'CHANGE_CONTEXT_REQUIRED',
+          message: '修改请求需要先在地图上选择一个模块，让 Agent 能限定影响范围。',
+        });
+        return;
+      }
+      this.#agentRunner.recordUserMessage(command.agent, command.message);
+      const id = await this.#service.createAnnotation({
+        annotationType: 'change',
+        body: command.message,
+        nodeIds,
+      });
+      if (id === undefined) {
+        this.#post({ type: 'error', code: 'ANNOTATION_REJECTED', message: '无法创建修改请求' });
+        return;
+      }
+      await this.#startAnnotationAnswer(command.agent, id);
+      return;
+    }
+    const started = await this.#agentRunner.sendMessage(command.agent, command.message);
+    if (started !== 'started') {
+      this.#post({
+        type: 'error',
+        code: started === 'active' ? 'AGENT_RUN_ACTIVE' : 'AGENT_NOT_READY',
+        message:
+          started === 'active' ? 'Agent 正在处理上一条消息，请稍候。' : 'Agent 尚未配置完成。',
+      });
+    }
+  }
+
+  async #startAnnotationAnswer(
+    agent: 'codex' | 'claude-code',
+    annotationId: string,
+  ): Promise<void> {
+    if (!this.#service.snapshot.annotations.has(annotationId)) {
+      this.#post({ type: 'error', code: 'ANNOTATION_NOT_FOUND', message: '找不到该标注' });
+      return;
+    }
+    const started = await this.#agentRunner.start(agent, 'annotation_answer', annotationId);
+    if (started === 'started') return;
+    this.#post({
+      type: 'error',
+      code: started === 'active' ? 'AGENT_RUN_ACTIVE' : 'AGENT_NOT_READY',
+      message:
+        started === 'active'
+          ? '已有 AI 子任务正在运行，请先等待或停止它'
+          : '无法启动解释子任务；请刷新 Agent 配置，或复制手动任务',
+    });
+  }
+
+  async #startApprovedChange(agent: 'codex' | 'claude-code', proposalId: string): Promise<void> {
+    const proposal = this.#service.snapshot.changeProposals.get(proposalId);
+    if (proposal?.status !== 'approved' || proposal.approval === undefined) {
+      this.#post({
+        type: 'error',
+        code: 'PROPOSAL_NOT_APPROVED',
+        message: '方案尚未批准、已经失效或授权已被使用',
+      });
+      return;
+    }
+    const started = await this.#agentRunner.start(agent, 'approved_change', proposalId);
+    if (started === 'started') return;
+    this.#post({
+      type: 'error',
+      code: started === 'active' ? 'AGENT_RUN_ACTIVE' : 'AGENT_NOT_READY',
+      message:
+        started === 'active'
+          ? '已有 Agent 子线程正在运行，请先等待或停止它'
+          : '无法启动内部编辑子线程；请刷新 Agent 配置，或使用手动任务兜底',
+    });
+  }
+
+  async #confirmReinitialization(): Promise<boolean> {
+    const confirmed = await window.showWarningMessage(
+      [
+        '将根据当前仓库状态重新分析并完整重绘项目地图。',
+        '旧地图会一直保留到新的 ChangeSet 完成；过时节点和关系可能被移除，但不会修改用户源码。',
+        `当前地图：r${String(this.#service.snapshot.revision)}，${String(this.#service.snapshot.nodes.size)} 个节点。`,
+      ].join('\n'),
+      { modal: true },
+      '重新初始化',
+    );
+    return confirmed === '重新初始化';
+  }
+
+  #canStartExistingMapTask(): boolean {
+    if (this.#service.snapshot.activeChanges.size > 0) {
+      this.#post({
+        type: 'error',
+        code: 'CHANGE_SET_ACTIVE',
+        message: '已有进行中的 ChangeSet，请先完成或停止它，再启动地图任务。',
+      });
+      return false;
+    }
+    if (this.#service.snapshot.nodes.size === 0) {
+      this.#post({
+        type: 'error',
+        code: 'MAP_EMPTY',
+        message: '当前地图为空，请使用首次建图。',
+      });
+      return false;
+    }
+    return true;
   }
 
   async #handleChangeCommand(
@@ -231,6 +491,9 @@ export class MapPanel {
             }
           : { type: 'status', state: 'idle', detail: `annotation-created:${id}` },
       );
+      if (id !== undefined && command.autoAnswerAgent !== undefined) {
+        await this.#startAnnotationAnswer(command.autoAnswerAgent, id);
+      }
       return;
     }
     if (command.type === 'resolveAnnotation') {
@@ -259,30 +522,7 @@ export class MapPanel {
     >,
   ): Promise<void> {
     if (command.type === 'approveProposal') {
-      let result = await this.#service.approveProposal(command.proposalId, command.approvedScope);
-      if (!result.ok && (result.overlappingChanges?.length ?? 0) > 0) {
-        const confirmed = await window.showWarningMessage(
-          `批准范围与已有未提交改动重叠：${result.overlappingChanges?.join(', ') ?? ''}。God View 不会覆盖或回滚这些改动，仍要批准吗？`,
-          { modal: true },
-          '仍然批准',
-        );
-        if (confirmed === '仍然批准') {
-          result = await this.#service.approveProposal(
-            command.proposalId,
-            command.approvedScope,
-            true,
-          );
-        }
-      }
-      if (!result.ok) {
-        this.#post({ type: 'error', code: 'PROPOSAL_REJECTED', message: result.reason });
-        return;
-      }
-      this.#post({
-        type: 'status',
-        state: 'idle',
-        detail: `proposal-approved:${command.proposalId}`,
-      });
+      await this.#approveAndMaybeStart(command);
       return;
     }
     if (command.type === 'rejectProposal') {
@@ -308,9 +548,47 @@ export class MapPanel {
     void window.showInformationMessage('God View：已批准的修改任务已复制；令牌 15 分钟内有效。');
   }
 
+  async #approveAndMaybeStart(
+    command: Extract<WebviewCommand, { type: 'approveProposal' }>,
+  ): Promise<void> {
+    let result = await this.#service.approveProposal(command.proposalId, command.approvedScope);
+    if (!result.ok && (result.overlappingChanges?.length ?? 0) > 0) {
+      const confirmed = await window.showWarningMessage(
+        `批准范围与已有未提交改动重叠：${result.overlappingChanges?.join(', ') ?? ''}。God View 不会覆盖或回滚这些改动，仍要批准吗？`,
+        { modal: true },
+        '仍然批准',
+      );
+      if (confirmed === '仍然批准') {
+        result = await this.#service.approveProposal(
+          command.proposalId,
+          command.approvedScope,
+          true,
+        );
+      }
+    }
+    if (!result.ok) {
+      this.#post({ type: 'error', code: 'PROPOSAL_REJECTED', message: result.reason });
+      return;
+    }
+    this.#post({
+      type: 'status',
+      state: 'idle',
+      detail: `proposal-approved:${command.proposalId}`,
+    });
+    if (command.autoStartAgent !== undefined) {
+      await this.#startApprovedChange(command.autoStartAgent, command.proposalId);
+    }
+  }
+
   #sendSnapshot(): void {
     const layout = this.#context.workspaceState.get<LayoutPositions>(this.#layoutKey());
+    const agentPaneHeight = this.#context.workspaceState.get<number>(
+      agentPaneHeightKey(this.#service.snapshot.workspaceId),
+    );
     const coverage = this.#service.coverage;
+    const agentPaneView = this.#context.workspaceState.get<
+      Extract<ExtensionEvent, { type: 'map/snapshot' }>['agentPaneView']
+    >(agentPaneViewKey(this.#service.snapshot.workspaceId));
     this.#post({
       type: 'map/snapshot',
       document: this.#service.toDocument(),
@@ -319,7 +597,41 @@ export class MapPanel {
       drift: this.#service.drift,
       ...(coverage === undefined ? {} : { coverage }),
       ...(layout === undefined ? {} : { layout }),
+      ...(agentPaneHeight === undefined ? {} : { agentPaneHeight }),
+      ...(agentPaneView === undefined ? {} : { agentPaneView }),
     });
+    const conversation = this.#agentRunner.conversation;
+    if (conversation !== undefined) this.#post({ type: 'agent/conversation', conversation });
+  }
+
+  async #exportAgentConversation(): Promise<void> {
+    const conversation = this.#agentRunner.conversation;
+    if (conversation === undefined || conversation.messages.length === 0) {
+      this.#post({
+        type: 'error',
+        code: 'CONVERSATION_EMPTY',
+        message: '当前没有可导出的 Agent 对话。',
+      });
+      return;
+    }
+    const exportedAt = this.#agentRunner.timestamp();
+    const target = await window.showSaveDialog({
+      defaultUri: Uri.joinPath(this.#service.root, agentConversationFileName(exportedAt)),
+      filters: { Markdown: ['md'] },
+      saveLabel: '导出对话记录',
+    });
+    if (target === undefined) return;
+    const text = serializeAgentConversation({
+      workspace: this.#service.root.fsPath,
+      branch: this.#service.snapshot.branchKey,
+      mapRevision: this.#service.snapshot.revision,
+      exportedAt,
+      conversation,
+      ...(this.#agentRunner.lastRun === undefined ? {} : { run: this.#agentRunner.lastRun }),
+      rawOutput: this.#agentRunner.lastRawOutput,
+    });
+    await workspace.fs.writeFile(target, new TextEncoder().encode(text));
+    void window.showInformationMessage(`God View：对话记录已导出到 ${target.fsPath}`);
   }
 
   async #openSource(path: string, startLine?: number): Promise<void> {
@@ -331,6 +643,11 @@ export class MapPanel {
       return;
     }
     try {
+      const stat = await workspace.fs.stat(uri);
+      if ((stat.type & FileType.Directory) !== 0) {
+        await commands.executeCommand('revealInExplorer', uri);
+        return;
+      }
       const editor = await window.showTextDocument(uri, { preview: true });
       if (startLine !== undefined) {
         const position = new Range(startLine - 1, 0, startLine - 1, 0);
@@ -365,6 +682,16 @@ export class MapPanel {
     const script = webview.asWebviewUri(Uri.joinPath(base, 'index.js'));
     const style = webview.asWebviewUri(Uri.joinPath(base, 'index.css'));
     const layoutWorker = webview.asWebviewUri(Uri.joinPath(base, 'layout-worker.js'));
+    const packageJson = this.#context.extension.packageJSON as unknown;
+    const rawExtensionVersion =
+      typeof packageJson === 'object' && packageJson !== null
+        ? (packageJson as Record<string, unknown>)['version']
+        : undefined;
+    const extensionVersion =
+      typeof rawExtensionVersion === 'string' && rawExtensionVersion !== ''
+        ? rawExtensionVersion
+        : 'unknown';
+    const layoutWorkerVersioned = `${layoutWorker.toString()}?v=${encodeURIComponent(extensionVersion)}`;
     const csp = [
       `default-src 'none'`,
       `img-src ${webview.cspSource} data:`,
@@ -385,45 +712,9 @@ export class MapPanel {
     <title>God View</title>
   </head>
   <body>
-    <div id="root" data-worker-src="${layoutWorker.toString()}"></div>
+    <div id="root" data-worker-src="${layoutWorkerVersioned}"></div>
     <script type="module" nonce="${nonce}" src="${script.toString()}"></script>
   </body>
 </html>`;
   }
-}
-
-function isSnapshotCommand(
-  command: WebviewCommand,
-): command is Extract<WebviewCommand, { type: 'ready' | 'requestSnapshot' }> {
-  return command.type === 'ready' || command.type === 'requestSnapshot';
-}
-
-function isChangeCommand(
-  command: WebviewCommand,
-): command is Extract<WebviewCommand, { type: 'openDiff' | 'reviewChange' | 'interruptChange' }> {
-  return ['openDiff', 'reviewChange', 'interruptChange'].includes(command.type);
-}
-
-function formatApprovedChangeTask(proposal: ChangeProposal): string {
-  const approval = proposal.approval;
-  if (approval === undefined) return '';
-  return [
-    '在执行任何文件修改前，先调用 God View MCP 工具 start_approved_change：',
-    JSON.stringify(
-      {
-        sessionId: 'god-view-approved-change',
-        idempotencyKey: `start-${proposal.id}`,
-        proposalId: proposal.id,
-        approvalToken: approval.token,
-      },
-      null,
-      2,
-    ),
-    '',
-    `方案：${proposal.summary}`,
-    `仅允许修改：${approval.approvedScope.join(', ')}`,
-    `授权模式：${approval.permissionMode}（God View 监控越界，但不能强制阻止外部进程写文件）`,
-    `授权到期：${approval.expiresAt}`,
-    '启动成功后，在所有地图写事件中携带返回的 changeSetId；不要修改批准范围外的文件。',
-  ].join('\n');
 }

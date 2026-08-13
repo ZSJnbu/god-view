@@ -24,6 +24,7 @@
         "accepted": { "type": "boolean" },
         "mapRevision": { "type": "integer", "minimum": 0 },
         "eventId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "changeSetId": { "$ref": "common.schema.json#/$defs/Identifier" },
         "errors": { "type": "array", "items": { "$ref": "#/$defs/ToolError" } },
         "warnings": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortNote" } }
       }
@@ -78,6 +79,10 @@
         "changeProposals": {
           "type": "array",
           "items": { "$ref": "graph.schema.json#/$defs/ChangeProposal" }
+        },
+        "activeChanges": {
+          "type": "array",
+          "items": { "$ref": "graph.schema.json#/$defs/ActiveChange" }
         },
         "coverage": { "$ref": "graph.schema.json#/$defs/CoverageReport" }
       }

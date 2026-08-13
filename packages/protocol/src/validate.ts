@@ -18,6 +18,7 @@ import type {
   ProposeChangeInput,
   RequestWriteAccessInput,
   StartApprovedChangeInput,
+  ToolResult,
   UpsertStoryInput,
   UpsertEdgeInput,
   UpsertNodeInput,
@@ -146,6 +147,7 @@ export interface ProtocolValidator {
   validateEvent(input: unknown): Result<GodViewEvent, ProtocolError[]>;
   validateSnapshot(input: unknown): Result<GraphSnapshotDocument, ProtocolError[]>;
   validateAdapterCapabilities(input: unknown): Result<AdapterCapabilities, ProtocolError[]>;
+  validateToolResult(input: unknown): Result<ToolResult, ProtocolError[]>;
   validateToolInput<K extends ToolName>(
     name: K,
     input: unknown,
@@ -231,6 +233,11 @@ class AjvProtocolValidator implements ProtocolValidator {
     return validate(input)
       ? ok(input as AdapterCapabilities)
       : err(toProtocolErrors(validate.errors));
+  }
+
+  validateToolResult(input: unknown): Result<ToolResult, ProtocolError[]> {
+    const validate = this.#compiled('tools.schema.json', 'ToolResult');
+    return validate(input) ? ok(input as ToolResult) : err(toProtocolErrors(validate.errors));
   }
 
   validateToolInput<K extends ToolName>(

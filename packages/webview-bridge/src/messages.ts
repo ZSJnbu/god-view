@@ -53,6 +53,81 @@ export interface MapPatch {
 
 export type SyncState = 'idle' | 'receiving' | 'validating' | 'degraded';
 
+export type ConfigurableAgent = 'codex' | 'claude-code';
+
+export interface AgentConfigurationView {
+  readonly agent: ConfigurableAgent;
+  readonly displayName: string;
+  readonly installed: boolean;
+  readonly version?: string;
+  readonly configuration: 'checking' | 'missing' | 'current' | 'conflict' | 'error';
+  readonly workspaceRoot: string;
+  readonly detail?: string;
+}
+
+export interface AgentQuestionOption {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string;
+}
+
+export interface AgentQuestion {
+  readonly question: string;
+  readonly options: readonly AgentQuestionOption[];
+}
+
+export interface AgentRunView {
+  readonly runId: string;
+  readonly agent: ConfigurableAgent;
+  readonly state: 'starting' | 'running' | 'awaiting_input' | 'completed' | 'failed' | 'cancelled';
+  readonly output: readonly string[];
+  readonly question?: AgentQuestion;
+  readonly detail?: string;
+  readonly restartRequired: boolean;
+  /** 缺失时按首次初始化处理，兼容旧扩展消息。 */
+  readonly purpose?:
+    | 'initialization'
+    | 'reinitialization'
+    | 'group_completion'
+    | 'file_completion'
+    | 'project_chat'
+    | 'annotation_answer'
+    | 'approved_change';
+  /** 解释子线程绑定的持久标注；其他任务不携带。 */
+  readonly annotationId?: Identifier;
+  /** 批准后编辑子线程绑定的修改方案。 */
+  readonly proposalId?: Identifier;
+}
+
+export interface AgentConversationMessage {
+  readonly id: string;
+  readonly role: 'user' | 'agent' | 'activity';
+  readonly body: string;
+  readonly createdAt: string;
+  readonly runId?: string;
+}
+
+/** 工作区内常驻的 Agent 对话；任务运行只是对话中的一段活动。 */
+export interface AgentConversationView {
+  readonly threadId: string;
+  readonly agent?: ConfigurableAgent;
+  readonly state: 'idle' | 'running' | 'awaiting_input' | 'editing' | 'failed';
+  readonly messages: readonly AgentConversationMessage[];
+  readonly activeRunId?: string;
+}
+
+export interface AgentFloatingBounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface AgentPaneView {
+  readonly mode: 'docked' | 'floating';
+  readonly floatingBounds: AgentFloatingBounds;
+}
+
 /**
  * 扩展 → Webview。
  *
@@ -72,6 +147,9 @@ export type ExtensionEvent =
       readonly coverage?: CoverageReport;
       readonly drift: readonly DriftFinding[];
       readonly layout?: Readonly<Record<string, { readonly x: number; readonly y: number }>>;
+      /** 已有地图中底部 Agent 进度视窗的工作区级高度。 */
+      readonly agentPaneHeight?: number;
+      readonly agentPaneView?: AgentPaneView;
     }
   | {
       readonly type: 'map/patch';
@@ -89,6 +167,13 @@ export type ExtensionEvent =
       readonly coverage?: CoverageReport;
     }
   | { readonly type: 'status'; readonly state: SyncState; readonly detail?: string }
+  | {
+      readonly type: 'agent/status';
+      readonly agents: readonly AgentConfigurationView[];
+      readonly selectedAgent?: ConfigurableAgent;
+    }
+  | { readonly type: 'agent/run'; readonly run: AgentRunView }
+  | { readonly type: 'agent/conversation'; readonly conversation: AgentConversationView }
   | { readonly type: 'error'; readonly code: string; readonly message: string };
 
 /** Webview → 扩展。 */
@@ -98,13 +183,37 @@ export type WebviewCommand =
   | { readonly type: 'generateAgentTask' }
   | { readonly type: 'copyAgentSetup' }
   | { readonly type: 'configureAgent'; readonly agent: 'codex' | 'claude-code' }
+  | { readonly type: 'refreshAgentStatus' }
+  | { readonly type: 'startInitialization'; readonly agent: ConfigurableAgent }
+  | { readonly type: 'startReinitialization'; readonly agent: ConfigurableAgent }
+  | {
+      readonly type: 'startMapCompletion';
+      readonly agent: ConfigurableAgent;
+      readonly target: 'groups' | 'files';
+    }
+  | { readonly type: 'answerAgentQuestion'; readonly runId: string; readonly answer: string }
+  | { readonly type: 'cancelAgentRun'; readonly runId: string }
+  | {
+      readonly type: 'sendAgentMessage';
+      readonly agent: ConfigurableAgent;
+      readonly message: string;
+      readonly mode: 'chat' | 'change';
+      readonly nodeIds?: readonly Identifier[];
+    }
   | {
       readonly type: 'createAnnotation';
-      readonly annotationType: 'note' | 'explain' | 'risk';
+      readonly annotationType: 'note' | 'explain' | 'risk' | 'change';
       readonly body: string;
       readonly nodeIds: readonly Identifier[];
       /** 用户在预览中明确移除的上下文路径；扩展会重新计算并校验，而非直接信任。 */
       readonly excludedPaths?: readonly WorkspacePath[];
+      /** 配置可用时，创建后立即在插件内部启动解释子线程。 */
+      readonly autoAnswerAgent?: ConfigurableAgent;
+    }
+  | {
+      readonly type: 'startAnnotationAnswer';
+      readonly annotationId: Identifier;
+      readonly agent: ConfigurableAgent;
     }
   | { readonly type: 'resolveAnnotation'; readonly annotationId: Identifier }
   | { readonly type: 'copyAnnotationTask'; readonly annotationId: Identifier }
@@ -112,6 +221,13 @@ export type WebviewCommand =
       readonly type: 'approveProposal';
       readonly proposalId: Identifier;
       readonly approvedScope: readonly WorkspacePath[];
+      /** 批准成功后直接在插件内部启动可写 Agent 子线程。 */
+      readonly autoStartAgent?: ConfigurableAgent;
+    }
+  | {
+      readonly type: 'startApprovedChange';
+      readonly proposalId: Identifier;
+      readonly agent: ConfigurableAgent;
     }
   | { readonly type: 'rejectProposal'; readonly proposalId: Identifier }
   | { readonly type: 'copyApprovedChangeTask'; readonly proposalId: Identifier }
@@ -131,7 +247,10 @@ export type WebviewCommand =
   | {
       readonly type: 'saveLayout';
       readonly positions: Readonly<Record<string, { readonly x: number; readonly y: number }>>;
-    };
+    }
+  | { readonly type: 'saveAgentPaneHeight'; readonly height: number }
+  | { readonly type: 'exportAgentConversation' }
+  | { readonly type: 'saveAgentPaneView'; readonly view: AgentPaneView };
 
 export type ExtensionEventType = ExtensionEvent['type'];
 export type WebviewCommandType = WebviewCommand['type'];

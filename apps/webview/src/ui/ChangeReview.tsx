@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { WorkspacePath } from '@god-view/protocol';
+import type { CompletedChange, WorkspacePath } from '@god-view/protocol';
 import type { AppStore } from '../app-store.js';
 import { useAppState } from './use-app-state.js';
 
@@ -56,6 +56,7 @@ export function ChangeReview({
         ))}
       </ul>
       <small>God View 仅保存路径、统计和哈希；源码内容由 VS Code 原生 Git Diff 打开。</small>
+      <MapImpact completed={completed} />
       {active === undefined && history.length > 0 && (
         <details className="change-review__history">
           <summary>ChangeSet 历史（{history.length}）</summary>
@@ -120,6 +121,33 @@ export function ChangeReview({
         </div>
       )}
     </aside>
+  );
+}
+
+function MapImpact({
+  completed,
+}: {
+  readonly completed: CompletedChange | undefined;
+}): React.JSX.Element {
+  if (completed === undefined) return <></>;
+  const hasNodes = (completed.touchedNodeIds?.length ?? 0) > 0;
+  const hasEdges = (completed.touchedEdgeIds?.length ?? 0) > 0;
+  return (
+    <>
+      {completed.note !== undefined && (
+        <p className="change-review__summary">
+          <strong>变更说明：</strong>
+          {completed.note}
+        </p>
+      )}
+      {(hasNodes || hasEdges) && (
+        <section className="change-review__map-impact" aria-label="地图同步结果">
+          <strong>地图同步结果</strong>
+          {hasNodes && <p>更新模块：{completed.touchedNodeIds?.join('、')}</p>}
+          {hasEdges && <p>更新关系：{completed.touchedEdgeIds?.join('、')}</p>}
+        </section>
+      )}
+    </>
   );
 }
 

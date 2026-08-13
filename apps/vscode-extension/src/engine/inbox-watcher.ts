@@ -1,5 +1,6 @@
 import { RelativePattern, Uri, workspace, type Disposable, type FileSystemWatcher } from 'vscode';
-import type { GodViewEvent, ProtocolValidator } from '@god-view/protocol';
+import type { GodViewEvent, ProtocolValidator, ToolResult } from '@god-view/protocol';
+import { writeFileAtomic } from '@god-view/storage';
 import type { Logger } from '../logger.js';
 
 export interface InboxDelivery {
@@ -17,8 +18,9 @@ export interface InboxDelivery {
 export class InboxWatcher implements Disposable {
   readonly #inboxDir: Uri;
   readonly #validator: ProtocolValidator;
+  readonly #acknowledgementsDir: Uri;
   readonly #logger: Logger;
-  readonly #onEvent: (delivery: InboxDelivery) => Promise<void>;
+  readonly #onEvent: (delivery: InboxDelivery) => Promise<ToolResult>;
   #watcher: FileSystemWatcher | undefined;
   #poller: ReturnType<typeof setInterval> | undefined;
   /** 处理串行化：单写者模型不允许并发归约同一张地图。 */
@@ -26,11 +28,13 @@ export class InboxWatcher implements Disposable {
 
   constructor(options: {
     readonly inboxDir: Uri;
+    readonly acknowledgementsDir: Uri;
     readonly validator: ProtocolValidator;
     readonly logger: Logger;
-    readonly onEvent: (delivery: InboxDelivery) => Promise<void>;
+    readonly onEvent: (delivery: InboxDelivery) => Promise<ToolResult>;
   }) {
     this.#inboxDir = options.inboxDir;
+    this.#acknowledgementsDir = options.acknowledgementsDir;
     this.#validator = options.validator;
     this.#logger = options.logger;
     this.#onEvent = options.onEvent;
@@ -38,6 +42,7 @@ export class InboxWatcher implements Disposable {
 
   async start(): Promise<void> {
     await workspace.fs.createDirectory(this.#inboxDir);
+    await workspace.fs.createDirectory(this.#acknowledgementsDir);
     const pattern = new RelativePattern(this.#inboxDir, '*.json');
     const watcher = workspace.createFileSystemWatcher(pattern, false, false, true);
     watcher.onDidCreate((uri) => {
@@ -113,7 +118,12 @@ export class InboxWatcher implements Disposable {
       await this.#discard(uri);
       return;
     }
-    await this.#onEvent({ event: validated.value, fileName });
+    const result = await this.#onEvent({ event: validated.value, fileName });
+    await writeFileAtomic(
+      Uri.joinPath(this.#acknowledgementsDir, `${safeEventId(validated.value.eventId)}.json`)
+        .fsPath,
+      JSON.stringify(result),
+    );
     await this.#discard(uri);
   }
 
@@ -131,4 +141,8 @@ export class InboxWatcher implements Disposable {
     this.#watcher?.dispose();
     this.#watcher = undefined;
   }
+}
+
+function safeEventId(eventId: string): string {
+  return eventId.replace(/[^A-Za-z0-9._-]/gu, '-');
 }

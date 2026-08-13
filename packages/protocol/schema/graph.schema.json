@@ -616,6 +616,14 @@
           "type": "array",
           "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
         },
+        "touchedNodeIds": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        },
+        "touchedEdgeIds": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/Identifier" }
+        },
         "diff": { "$ref": "#/$defs/ChangeDiffSummary" },
         "note": { "type": "string", "maxLength": 500 }
       }

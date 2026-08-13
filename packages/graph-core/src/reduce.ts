@@ -20,10 +20,8 @@ import {
 } from '@god-view/protocol';
 import { domainError, type DomainError } from './domain-error.js';
 import type { GraphSnapshot } from './snapshot.js';
-import { reduceAnnotation } from './reduce-annotation.js';
-import { reduceProposal } from './reduce-proposal.js';
-import { reduceChangeObserved } from './reduce-change-observed.js';
 import { reduceChangeComplete } from './reduce-change-complete.js';
+import { reduceSpecialEvent } from './reduce-special.js';
 
 type ReduceResult = Result<GraphSnapshot, DomainError>;
 
@@ -243,7 +241,16 @@ function handleChangeStart(snapshot: GraphSnapshot, event: ChangeStartEvent): Re
   };
   const activeChanges = new Map(snapshot.activeChanges);
   activeChanges.set(changeSetId, change);
-  return ok(commit(snapshot, event, { activeChanges, bumpsRevision: true }));
+  const annotations = new Map(snapshot.annotations);
+  if (change.proposalId !== undefined) {
+    const proposal = snapshot.changeProposals.get(change.proposalId);
+    const annotation =
+      proposal === undefined ? undefined : snapshot.annotations.get(proposal.annotationId);
+    if (annotation !== undefined) {
+      annotations.set(annotation.id, { ...annotation, status: 'in_progress' });
+    }
+  }
+  return ok(commit(snapshot, event, { activeChanges, annotations, bumpsRevision: true }));
 }
 
 function validateChangeApproval(
@@ -531,75 +538,6 @@ function handleStoryUpsert(snapshot: GraphSnapshot, event: StoryUpsertEvent): Re
  * 纯函数：不读取时间、不生成随机 ID、不访问文件系统。相同的快照与事件序列
  * 必须产生语义等价的结果（TECHNICAL_ARCHITECTURE.md §8.1）。
  */
-function isAnnotationEvent(
-  event: GodViewEvent,
-): event is Extract<
-  GodViewEvent,
-  { type: 'annotation_create' | 'annotation_answer' | 'annotation_resolve' }
-> {
-  return ['annotation_create', 'annotation_answer', 'annotation_resolve'].includes(event.type);
-}
-
-function isProposalEvent(
-  event: GodViewEvent,
-): event is Extract<
-  GodViewEvent,
-  { type: 'write_access_requested' | 'change_proposal' | 'change_approved' | 'change_rejected' }
-> {
-  return [
-    'write_access_requested',
-    'change_proposal',
-    'change_approved',
-    'change_rejected',
-  ].includes(event.type);
-}
-
-function reduceSpecialEvent(
-  snapshot: GraphSnapshot,
-  event: GodViewEvent,
-): ReduceResult | undefined {
-  if (isAnnotationEvent(event)) return reduceAnnotation(snapshot, event);
-  if (isProposalEvent(event)) return reduceProposal(snapshot, event);
-  if (event.type === 'change_observed') return reduceChangeObserved(snapshot, event);
-  if (event.type === 'change_reviewed') return reduceChangeReviewed(snapshot, event);
-  return undefined;
-}
-
-function reduceChangeReviewed(
-  snapshot: GraphSnapshot,
-  event: Extract<GodViewEvent, { type: 'change_reviewed' }>,
-): ReduceResult {
-  if (event.actor?.kind !== 'user')
-    return err(domainError(errorCodes.UNSUPPORTED, '只有用户可以接受 ChangeSet 结果'));
-  const completed = snapshot.completedChanges.get(event.payload.changeSetId);
-  if (completed?.status !== 'pending_review')
-    return err(
-      domainError(
-        errorCodes.UNKNOWN_CHANGE_SET,
-        `变更 ${event.payload.changeSetId} 不存在或不在待审查状态`,
-        event.payload.changeSetId,
-      ),
-    );
-  if (
-    event.payload.status === 'accepted' &&
-    completed.diff.files.some((file) => file.scopeStatus === 'outside_scope')
-  )
-    return err(
-      domainError(
-        errorCodes.SCOPE_VIOLATION,
-        '存在越界文件时只能选择带问题接受',
-        completed.changeSetId,
-      ),
-    );
-  const completedChanges = new Map(snapshot.completedChanges);
-  completedChanges.set(completed.changeSetId, {
-    ...completed,
-    status: event.payload.status,
-    ...(event.payload.note === undefined ? {} : { note: event.payload.note }),
-  });
-  return ok(commit(snapshot, event, { completedChanges, bumpsRevision: true }));
-}
-
 export function reduce(snapshot: GraphSnapshot, event: GodViewEvent): ReduceResult {
   if (event.workspaceId !== snapshot.workspaceId || event.branchKey !== snapshot.branchKey) {
     return err(
@@ -614,7 +552,7 @@ export function reduce(snapshot: GraphSnapshot, event: GodViewEvent): ReduceResu
     return ok(snapshot);
   }
 
-  const special = reduceSpecialEvent(snapshot, event);
+  const special = reduceSpecialEvent(snapshot, event, commit);
   if (special !== undefined) return special;
 
   switch (event.type) {
