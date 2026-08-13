@@ -2,6 +2,12 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.26 - 2026-08-13
+
+- Adds a versioned map-change timeline for the current Agent session, keeping the authoritative map revision separate from the revision currently rendered on screen.
+- Adds pause, resume, single-step, 0.5×/1×/2× speed, replay-session and jump-to-latest controls while preserving the latest authoritative state.
+- Rejects stale map patches, bounds the in-memory replay history and adds regression coverage for rapid multi-revision Agent updates.
+
 ## 0.3.25 - 2026-08-13
 
 - Waits for the authoritative map to consume accepted annotation and approved-edit events before deciding whether an internal Agent run succeeded, eliminating false failures caused by event-projection latency.
