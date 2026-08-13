@@ -1061,6 +1061,25 @@ body {
   overflow-wrap: anywhere;
 }
 
+.agent-conversation__approval {
+  padding: 10px;
+  margin: 8px;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-charts-yellow);
+}
+
+.agent-conversation__approval > header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.agent-conversation__approval > header span {
+  color: var(--vscode-descriptionForeground);
+}
+
 /*
  * 可信度同时用颜色和左边框样式编码：只靠颜色区分对色觉障碍用户不可用。
  */

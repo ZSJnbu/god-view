@@ -312,6 +312,8 @@ export function App({
                 return node === undefined ? undefined : { id: node.id, label: node.label };
               })()
         }
+        proposals={[...state.map.changeProposals.values()]}
+        hasGit={state.map.capabilities?.hasGit ?? false}
         onSend={(message, mode) => {
           if (configuredAgent === undefined) {
             messenger.send({ type: 'refreshAgentStatus' });
@@ -340,6 +342,31 @@ export function App({
         }}
         onExport={() => {
           messenger.send({ type: 'exportAgentConversation' });
+        }}
+        onApproveProposal={(proposalId, approvedScope) => {
+          messenger.send({
+            type: 'approveProposal',
+            proposalId,
+            approvedScope,
+            ...(configuredAgent === undefined ? {} : { autoStartAgent: configuredAgent.agent }),
+          });
+        }}
+        onStartApprovedChange={(proposalId) => {
+          if (configuredAgent === undefined) {
+            messenger.send({ type: 'refreshAgentStatus' });
+            return;
+          }
+          messenger.send({
+            type: 'startApprovedChange',
+            proposalId,
+            agent: configuredAgent.agent,
+          });
+        }}
+        onRejectProposal={(proposalId) => {
+          messenger.send({ type: 'rejectProposal', proposalId });
+        }}
+        onCopyApprovedChangeTask={(proposalId) => {
+          messenger.send({ type: 'copyApprovedChangeTask', proposalId });
         }}
       />
     );

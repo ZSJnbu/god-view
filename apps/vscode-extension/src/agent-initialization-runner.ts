@@ -663,6 +663,9 @@ function startingDetail(purpose: AgentRunPurpose): string {
 
 function completedDetail(purpose: AgentRunPurpose): string {
   if (purpose === 'project_chat') return 'Agent 已回复，你可以继续追问。';
+  if (purpose === 'annotation_answer') {
+    return '标注分析已回写。若这是修改请求，请审核方案并批准文件范围；批准后 Agent 才会开始实现。';
+  }
   return purpose === 'initialization'
     ? '首次建图任务已结束。请核对地图，并重启其他已打开的 Agent 会话。'
     : `${purposeName(purpose)}已完成并通过最终复核；地图已刷新。`;

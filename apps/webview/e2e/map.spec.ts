@@ -536,11 +536,15 @@ test('修改方案批准后在插件内编辑代码并同步模块关系视图',
       }),
     );
   });
-  await expect(page.getByRole('heading', { name: '修改方案' })).toBeVisible();
+  const approval = page.getByRole('region', { name: '等待批准并实现' });
+  await expect(approval).toBeVisible();
+  await expect(approval).toContainText('方案已准备好，等待你批准后实现');
+  await expect(approval).toContainText('Agent 还没有修改代码');
+  await expect(approval.getByRole('heading', { name: '修改方案' })).toBeVisible();
   await expect(page.getByText('请求本身没有授予写权限。')).toBeVisible();
-  await page.getByLabel('src/orders/index.test.ts').uncheck();
-  await page.getByRole('button', { name: '明确批准所选范围' }).click();
-  await expect(page.getByText(/当前为 monitored 模式/u)).toBeVisible();
+  await approval.getByLabel('src/orders/index.test.ts').uncheck();
+  await approval.getByRole('button', { name: '批准并开始实现' }).click();
+  await expect(approval.getByText(/当前为 monitored 模式/u)).toBeVisible();
   const run = page.getByRole('region', { name: 'Agent 项目编辑子线程进度' });
   await expect(run).toBeVisible();
   await expect(run).toContainText('正在编辑 src/orders/index.ts');

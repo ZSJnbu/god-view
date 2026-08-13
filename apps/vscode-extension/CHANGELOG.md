@@ -2,6 +2,12 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.27 - 2026-08-13
+
+- Keeps change requests in the project Agent conversation after analysis by rendering the proposed file scope, structural changes, risks and validation plan directly in the same pane.
+- Replaces the misleading completed state with an explicit “waiting for approval” handoff; approving the selected scope immediately starts the internal editing Agent.
+- Explains that non-Git workspaces need an initial Git baseline before God View can attribute Agent edits, enforce scope and present a trustworthy Diff review.
+
 ## 0.3.26 - 2026-08-13
 
 - Adds a versioned map-change timeline for the current Agent session, keeping the authoritative map revision separate from the revision currently rendered on screen.

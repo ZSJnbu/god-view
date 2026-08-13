@@ -4,7 +4,9 @@ import type {
   AgentRunView,
   ConfigurableAgent,
 } from '@god-view/webview-bridge';
+import type { ChangeProposal, Identifier, WorkspacePath } from '@god-view/protocol';
 import { AgentRunPanel } from './AgentRunPanel.js';
+import { ProposalReview } from './AnnotationThreads.js';
 
 // eslint-disable-next-line complexity -- one conversation surface intentionally exposes all live Agent states.
 export function AgentConversationPanel(props: {
@@ -12,12 +14,21 @@ export function AgentConversationPanel(props: {
   readonly run: AgentRunView | undefined;
   readonly agent: ConfigurableAgent | undefined;
   readonly selectedNode: { readonly id: string; readonly label: string } | undefined;
+  readonly proposals: readonly ChangeProposal[];
+  readonly hasGit: boolean;
   readonly onSend: (message: string, mode: 'chat' | 'change') => void;
   readonly onAnswer: (runId: string, answer: string) => void;
   readonly onCancel: (runId: string) => void;
   readonly paneMode: 'docked' | 'floating';
   readonly onTogglePaneMode: () => void;
   readonly onExport: () => void;
+  readonly onApproveProposal: (
+    proposalId: Identifier,
+    approvedScope: readonly WorkspacePath[],
+  ) => void;
+  readonly onStartApprovedChange: (proposalId: Identifier) => void;
+  readonly onRejectProposal: (proposalId: Identifier) => void;
+  readonly onCopyApprovedChangeTask: (proposalId: Identifier) => void;
 }): React.JSX.Element {
   const [message, setMessage] = useState('');
   const [mode, setMode] = useState<'chat' | 'change'>('chat');
@@ -26,6 +37,7 @@ export function AgentConversationPanel(props: {
   const messages = props.conversation?.messages ?? [];
   const hasQuestion = props.run?.question !== undefined && props.run.state === 'awaiting_input';
   const showTask = props.run !== undefined && props.run.purpose !== 'project_chat';
+  const actionableProposal = latestActionableProposal(props.proposals);
   useEffect(() => {
     const element = transcriptRef.current;
     if (element !== null) element.scrollTop = element.scrollHeight;
@@ -97,6 +109,32 @@ export function AgentConversationPanel(props: {
             compact
           />
         )}
+        {actionableProposal !== undefined && (
+          <section className="agent-conversation__approval" aria-label="等待批准并实现">
+            <header>
+              <strong>方案已准备好，等待你批准后实现</strong>
+              <span>Agent 还没有修改代码</span>
+            </header>
+            <ProposalReview
+              proposal={actionableProposal}
+              hasGit={props.hasGit}
+              onApprove={props.onApproveProposal}
+              onStart={props.onStartApprovedChange}
+              onReject={props.onRejectProposal}
+              onCopyTask={props.onCopyApprovedChangeTask}
+              editing={
+                props.run?.purpose === 'approved_change' &&
+                props.run.proposalId === actionableProposal.id &&
+                ['starting', 'running', 'awaiting_input'].includes(props.run.state)
+              }
+              failed={
+                props.run?.purpose === 'approved_change' &&
+                props.run.proposalId === actionableProposal.id &&
+                props.run.state === 'failed'
+              }
+            />
+          </section>
+        )}
       </div>
       <div className="agent-conversation__composer">
         <textarea
@@ -141,6 +179,14 @@ export function AgentConversationPanel(props: {
       </div>
     </section>
   );
+}
+
+function latestActionableProposal(
+  proposals: readonly ChangeProposal[],
+): ChangeProposal | undefined {
+  return [...proposals]
+    .filter((proposal) => proposal.status === 'proposed' || proposal.status === 'approved')
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
 }
 
 function isConversationActive(conversation: AgentConversationView | undefined): boolean {

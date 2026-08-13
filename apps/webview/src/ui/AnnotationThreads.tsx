@@ -182,7 +182,7 @@ function WriteRequest({ request }: { readonly request: WriteAccessRequest }): Re
   );
 }
 
-function ProposalReview({
+export function ProposalReview({
   proposal,
   hasGit,
   onApprove,
@@ -239,7 +239,12 @@ function ProposalReview({
           {proposal.approval.expiresAt}。当前为 monitored 模式，不能强制阻止外部进程越界写入。
         </p>
       )}
-      {pending && !hasGit && <p className="annotation-warning">无 Git 工作区不能批准执行。</p>}
+      {pending && !hasGit && (
+        <p className="annotation-warning">
+          当前项目没有 Git 基线。请先在 VS Code 源代码管理中初始化仓库并创建首次提交， 然后重新打开
+          God View；建立基线后才能区分 Agent 修改、检查越界文件并提供 Diff 验收。
+        </p>
+      )}
       <div className="annotation-thread__actions">
         {pending && (
           <>
@@ -251,7 +256,7 @@ function ProposalReview({
                 onApprove(proposal.id, [...scope]);
               }}
             >
-              明确批准所选范围
+              批准并开始实现
             </button>
             <button
               type="button"
