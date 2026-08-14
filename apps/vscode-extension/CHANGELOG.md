@@ -2,6 +2,13 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.33 - 2026-08-14
+
+- Turns ambiguous change requests such as “continue” into an explicit in-panel clarification step and resumes the same Agent session after the user chooses a direction.
+- Separates a successfully persisted annotation answer from proposal readiness, so answered requests without a proposal ask for more detail instead of becoming false failures.
+- Keeps clarification and proposal controls clickable in short docked panes by hiding the inactive composer while a run or approval is actionable.
+- Adds one real-Chrome journey covering clarification, proposal creation, approval, internal execution, authoritative Diff and final user acceptance.
+
 ## 0.3.32 - 2026-08-14
 
 - Classifies authentication failures only from explicit CLI messages or top-level error events instead of scanning every raw JSON event.
