@@ -425,7 +425,7 @@
                 },
               }),
             );
-          }, 30);
+          }, 250);
         });
       }
       if (command.type === 'exportAgentConversation') {

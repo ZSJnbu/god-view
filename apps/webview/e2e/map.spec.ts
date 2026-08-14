@@ -819,6 +819,83 @@ test('Diff 可打开原生比较并由用户验收，越界结果只能带问题
   );
 });
 
+test('任务前已有的范围外改动不误报越界，并允许正常接受结果', async ({ page }) => {
+  await page.evaluate(() => {
+    const timestamp = '2026-08-11T00:02:00.000Z';
+    const harness = window as unknown as {
+      __godViewSnapshot: {
+        document: { revision: number; completedChanges: unknown[] };
+      };
+    };
+    const completed = {
+      changeSetId: 'change.preexisting-overlap',
+      proposalId: 'proposal.preexisting-overlap',
+      status: 'pending_review',
+      completedAt: timestamp,
+      plannedFiles: ['README.md'],
+      actualFiles: ['README.md'],
+      diff: {
+        files: [
+          {
+            path: 'README.md',
+            status: 'modified',
+            additions: 12,
+            deletions: 2,
+            scopeStatus: 'approved',
+            attribution: 'change_set',
+          },
+          {
+            path: 'src/existing.ts',
+            status: 'modified',
+            additions: 0,
+            deletions: 0,
+            scopeStatus: 'outside_scope',
+            attribution: 'preexisting_overlap',
+          },
+        ],
+        additions: 12,
+        deletions: 2,
+        computedAt: timestamp,
+        contentHash: 'c'.repeat(64),
+      },
+    };
+    harness.__godViewSnapshot.document.completedChanges = [completed];
+    harness.__godViewSnapshot.document.revision += 1;
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'map/patch',
+          revision: harness.__godViewSnapshot.document.revision,
+          factsRevision: 1,
+          patch: {
+            upsertedNodes: [],
+            upsertedEdges: [],
+            removedNodeIds: [],
+            removedEdgeIds: [],
+            upsertedCompletedChanges: [completed],
+          },
+          drift: [],
+        },
+      }),
+    );
+  });
+
+  const review = page.getByRole('complementary', { name: 'ChangeSet Diff 审查' });
+  await expect(review).toContainText('README.md');
+  await expect(review).toContainText('任务前已有 · 不影响本次验收');
+  await expect(review.getByText(/src\/existing\.ts/u).locator('..')).not.toContainText('越界');
+  await review.getByRole('button', { name: '接受结果' }).click();
+
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toContainEqual({
+    type: 'reviewChange',
+    changeSetId: 'change.preexisting-overlap',
+    status: 'accepted',
+  });
+});
+
 test('失败方案显示真实原因，并且只能通过重新批准来重试', async ({ page }) => {
   await page.evaluate(() => {
     const harness = window as unknown as {

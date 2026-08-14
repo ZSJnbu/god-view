@@ -1214,6 +1214,10 @@ body {
   color: var(--vscode-errorForeground);
 }
 
+.change-review li[data-scope='preexisting'] {
+  color: var(--vscode-descriptionForeground);
+}
+
 .change-review button {
   padding: 0;
   color: var(--vscode-textLink-foreground);

@@ -27,7 +27,9 @@ export function ChangeReview({
   const completed = history.find((entry) => entry.changeSetId === selectedHistoryId) ?? history[0];
   const change = active ?? completed;
   if (change?.diff === undefined) return null;
-  const hasOutsideScope = change.diff.files.some((file) => file.scopeStatus === 'outside_scope');
+  const hasChangeSetOutsideScope = change.diff.files.some(
+    (file) => file.scopeStatus === 'outside_scope' && file.attribution !== 'preexisting_overlap',
+  );
   return (
     <aside className="change-review" aria-label="ChangeSet Diff 审查">
       <header>
@@ -38,7 +40,12 @@ export function ChangeReview({
       </header>
       <ul>
         {change.diff.files.map((file) => (
-          <li key={file.path} data-scope={file.scopeStatus}>
+          <li
+            key={file.path}
+            data-scope={
+              file.attribution === 'preexisting_overlap' ? 'preexisting' : file.scopeStatus
+            }
+          >
             <button
               type="button"
               onClick={() => {
@@ -49,8 +56,8 @@ export function ChangeReview({
             </button>
             <span>
               +{file.additions} / -{file.deletions} ·{' '}
-              {file.scopeStatus === 'approved' ? '批准范围内' : '越界'} ·{' '}
-              {file.attribution === 'preexisting_overlap' ? '与任务前改动重叠' : '本 ChangeSet'}
+              {scopeLabel(file.scopeStatus, file.attribution)} ·{' '}
+              {attributionLabel(file.attribution)}
             </span>
           </li>
         ))}
@@ -94,7 +101,7 @@ export function ChangeReview({
       )}
       {completed?.status === 'pending_review' && (
         <div className="annotation-thread__actions">
-          {!hasOutsideScope && (
+          {!hasChangeSetOutsideScope && (
             <button
               type="button"
               className="chip chip--active"
@@ -122,6 +129,25 @@ export function ChangeReview({
       )}
     </aside>
   );
+}
+
+function scopeLabel(
+  scopeStatus: 'approved' | 'outside_scope',
+  attribution: 'change_set' | 'preexisting_overlap' | 'unknown_external',
+): string {
+  if (scopeStatus === 'approved') return '批准范围内';
+  return attribution === 'preexisting_overlap' ? '任务前已有' : '越界';
+}
+
+function attributionLabel(
+  attribution: 'change_set' | 'preexisting_overlap' | 'unknown_external',
+): string {
+  const labels = {
+    change_set: '本 ChangeSet',
+    preexisting_overlap: '不影响本次验收',
+    unknown_external: '来源不明的外部写入',
+  } as const;
+  return labels[attribution];
 }
 
 function MapImpact({
