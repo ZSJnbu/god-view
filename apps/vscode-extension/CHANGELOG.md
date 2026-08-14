@@ -2,6 +2,12 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.35 - 2026-08-14
+
+- Makes the floating ChangeSet Diff review panel draggable from its visible title bar while keeping it inside the viewport.
+- Adds keyboard movement with arrow keys and faster Shift + Arrow movement for accessible repositioning.
+- Extends the real-Chrome review journey to verify pointer dragging, keyboard movement and final acceptance after repositioning.
+
 ## 0.3.34 - 2026-08-14
 
 - Labels task-preexisting out-of-scope Diff entries as prior workspace changes instead of Agent scope violations.
