@@ -1,4 +1,9 @@
 import { useState } from 'react';
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import type { CompletedChange, WorkspacePath } from '@god-view/protocol';
 import type { AppStore } from '../app-store.js';
 import { useAppState } from './use-app-state.js';
@@ -20,6 +25,7 @@ export function ChangeReview({
 }): React.JSX.Element | null {
   const state = useAppState(store);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string>();
+  const [position, setPosition] = useState<ReviewPosition>();
   const active = [...state.map.activeChanges.values()][0];
   const history = [...state.map.completedChanges.values()].sort((left, right) =>
     right.completedAt.localeCompare(left.completedAt),
@@ -30,9 +36,47 @@ export function ChangeReview({
   const hasChangeSetOutsideScope = change.diff.files.some(
     (file) => file.scopeStatus === 'outside_scope' && file.attribution !== 'preexisting_overlap',
   );
+  const drag = (event: ReactPointerEvent<HTMLElement>): void => {
+    const panel = event.currentTarget.closest<HTMLElement>('.change-review');
+    if (panel === null) return;
+    const bounds = panel.getBoundingClientRect();
+    beginReviewDrag(event, bounds, setPosition);
+  };
+  const moveByKeyboard = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    const step = event.shiftKey ? 40 : 12;
+    const delta: Readonly<Record<string, readonly [number, number]>> = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
+    const movement = delta[event.key];
+    if (movement === undefined) return;
+    const panel = event.currentTarget.closest<HTMLElement>('.change-review');
+    if (panel === null) return;
+    event.preventDefault();
+    const bounds = panel.getBoundingClientRect();
+    setPosition(
+      clampReviewPosition({ x: bounds.left + movement[0], y: bounds.top + movement[1] }, bounds),
+    );
+  };
+  const panelStyle: CSSProperties | undefined =
+    position === undefined
+      ? undefined
+      : { left: position.x, top: position.y, right: 'auto', bottom: 'auto' };
   return (
-    <aside className="change-review" aria-label="ChangeSet Diff 审查">
-      <header>
+    <aside className="change-review" aria-label="ChangeSet Diff 审查" style={panelStyle}>
+      <header
+        role="toolbar"
+        aria-label="ChangeSet Diff 拖动标题栏"
+        tabIndex={0}
+        title="按住并拖动面板；方向键微调位置，Shift + 方向键快速移动"
+        onPointerDown={drag}
+        onKeyDown={moveByKeyboard}
+      >
+        <span className="change-review__grip" aria-hidden="true">
+          ⠿
+        </span>
         <strong>ChangeSet Diff</strong>
         <span>
           {change.diff.files.length} 个文件 · +{change.diff.additions} / -{change.diff.deletions}
@@ -129,6 +173,55 @@ export function ChangeReview({
       )}
     </aside>
   );
+}
+
+interface ReviewPosition {
+  readonly x: number;
+  readonly y: number;
+}
+
+function clampReviewPosition(
+  position: ReviewPosition,
+  bounds: Pick<DOMRect, 'width' | 'height'>,
+): ReviewPosition {
+  const margin = 8;
+  return {
+    x: Math.max(margin, Math.min(window.innerWidth - bounds.width - margin, position.x)),
+    y: Math.max(margin, Math.min(window.innerHeight - bounds.height - margin, position.y)),
+  };
+}
+
+function beginReviewDrag(
+  event: ReactPointerEvent<HTMLElement>,
+  bounds: DOMRect,
+  onMove: (position: ReviewPosition) => void,
+): void {
+  event.preventDefault();
+  const target = event.currentTarget;
+  const start = { x: event.clientX, y: event.clientY };
+  target.setPointerCapture(event.pointerId);
+  const move = (nextEvent: PointerEvent): void => {
+    onMove(
+      clampReviewPosition(
+        {
+          x: bounds.left + nextEvent.clientX - start.x,
+          y: bounds.top + nextEvent.clientY - start.y,
+        },
+        bounds,
+      ),
+    );
+  };
+  const end = (nextEvent: PointerEvent): void => {
+    if (target.hasPointerCapture(nextEvent.pointerId)) {
+      target.releasePointerCapture(nextEvent.pointerId);
+    }
+    target.removeEventListener('pointermove', move);
+    target.removeEventListener('pointerup', end);
+    target.removeEventListener('pointercancel', end);
+  };
+  target.addEventListener('pointermove', move);
+  target.addEventListener('pointerup', end);
+  target.addEventListener('pointercancel', end);
 }
 
 function scopeLabel(

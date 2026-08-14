@@ -884,6 +884,32 @@ test('任务前已有的范围外改动不误报越界，并允许正常接受�
   await expect(review).toContainText('README.md');
   await expect(review).toContainText('任务前已有 · 不影响本次验收');
   await expect(review.getByText(/src\/existing\.ts/u).locator('..')).not.toContainText('越界');
+  const before = await review.boundingBox();
+  const titlebar = review.getByRole('toolbar', { name: 'ChangeSet Diff 拖动标题栏' });
+  const dragHandle = await titlebar.boundingBox();
+  expect(before).not.toBeNull();
+  expect(dragHandle).not.toBeNull();
+  if (before !== null && dragHandle !== null) {
+    await page.mouse.move(
+      dragHandle.x + dragHandle.width / 2,
+      dragHandle.y + dragHandle.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      dragHandle.x + dragHandle.width / 2 - 180,
+      dragHandle.y + dragHandle.height / 2 - 100,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+    const moved = await review.boundingBox();
+    expect(before.x - (moved?.x ?? before.x)).toBeGreaterThan(150);
+    expect(before.y - (moved?.y ?? before.y)).toBeGreaterThan(70);
+  }
+  const beforeKeyboard = await review.boundingBox();
+  await titlebar.focus();
+  await page.keyboard.press('ArrowRight');
+  const afterKeyboard = await review.boundingBox();
+  expect((afterKeyboard?.x ?? 0) - (beforeKeyboard?.x ?? 0)).toBeGreaterThanOrEqual(11);
   await review.getByRole('button', { name: '接受结果' }).click();
 
   const commands = await page.evaluate(

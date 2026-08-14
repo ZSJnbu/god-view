@@ -1197,7 +1197,27 @@ body {
 }
 
 .change-review header {
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  padding: 4px;
+  margin: -4px -4px 4px;
+  cursor: move;
+  user-select: none;
+  border-radius: 2px;
+  touch-action: none;
+}
+
+.change-review header:hover,
+.change-review header:focus-visible {
+  background: var(--vscode-toolbar-hoverBackground);
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.change-review__grip {
+  color: var(--vscode-descriptionForeground);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .change-review ul {
