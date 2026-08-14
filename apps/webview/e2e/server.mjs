@@ -15,6 +15,10 @@ const routes = new Map([
     { path: join(here, 'annotation-harness.js'), type: 'text/javascript; charset=utf-8' },
   ],
   [
+    '/continuation-harness.js',
+    { path: join(here, 'continuation-harness.js'), type: 'text/javascript; charset=utf-8' },
+  ],
+  [
     '/approved-change-harness.js',
     { path: join(here, 'approved-change-harness.js'), type: 'text/javascript; charset=utf-8' },
   ],

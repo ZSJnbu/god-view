@@ -239,7 +239,7 @@ describe('AgentInitializationRunner', () => {
       workspaceRoot: '/repo',
       task: () => '地图任务',
       annotationTask: (id) => `解释 ${id} 并调用 answer_annotation`,
-      annotationAnswered: () => true,
+      annotationCompletion: () => 'answered',
       authorize: () => Promise.resolve(true),
       onUpdate: (run) => updates.push(run),
       spawnProcess: vi.fn(() => process.child) as unknown as typeof spawn,
@@ -271,7 +271,7 @@ describe('AgentInitializationRunner', () => {
       workspaceRoot: '/repo',
       task: () => '地图任务',
       annotationTask: () => '回答标注',
-      annotationAnswered: () => answered,
+      annotationCompletion: () => (answered ? 'answered' : undefined),
       authorize: () => Promise.resolve(true),
       onUpdate: (run) => updates.push(run),
       spawnProcess: vi.fn(() => process.child) as unknown as typeof spawn,
@@ -291,7 +291,66 @@ describe('AgentInitializationRunner', () => {
     answered = true;
     await new Promise<void>((resolve) => setTimeout(resolve, 5));
 
-    expect(updates.at(-1)).toMatchObject({ state: 'completed' });
+    expect(updates.at(-1)).toMatchObject({
+      state: 'completed',
+      detail: '标注分析已回写，但尚未形成修改方案；请补充明确的修改方向后继续。',
+    });
+  });
+
+  it('模糊修改请求先等待用户选择，再恢复同一会话生成可批准方案', async () => {
+    const first = fakeProcess();
+    const resumed = fakeProcess();
+    const updates: AgentRunView[] = [];
+    let completion: 'answered' | 'proposal_ready' | undefined = 'answered';
+    const spawnProcess = vi
+      .fn()
+      .mockReturnValueOnce(first.child)
+      .mockReturnValueOnce(resumed.child);
+    const runner = new AgentInitializationRunner({
+      workspaceRoot: '/repo',
+      task: () => '地图任务',
+      annotationTask: () => '修改请求：继续处理',
+      annotationCompletion: () => completion,
+      authorize: () => Promise.resolve(true),
+      onUpdate: (run) => updates.push(run),
+      spawnProcess,
+    });
+
+    await runner.start('codex', 'annotation_answer', 'annotation.continue');
+    first.stdout.write(
+      `${JSON.stringify({ type: 'thread.started', thread_id: 'thread-continue' })}\n`,
+    );
+    first.stdout.write(
+      `${JSON.stringify({
+        type: 'item.completed',
+        text: 'GOD_VIEW_USER_QUESTION:{"question":"希望继续哪个方向？","options":[{"id":"visual","label":"视觉优化","description":"继续打磨现有静态博客"},{"id":"publishing","label":"在线发布","description":"增加编辑、登录与持久化"}]}',
+      })}\n`,
+    );
+    first.close(0);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(updates.at(-1)).toMatchObject({
+      state: 'awaiting_input',
+      question: { question: '希望继续哪个方向？' },
+    });
+    const runId = updates.at(-1)?.runId ?? '';
+    expect(runner.answer(runId, 'visual')).toBe(true);
+    const resumeCall = spawnProcess.mock.calls[1] as unknown as [string, string[]];
+    expect(resumeCall[1]).toEqual(
+      expect.arrayContaining(['exec', 'resume', '--json', 'thread-continue']),
+    );
+
+    completion = 'proposal_ready';
+    resumed.stdout.write(
+      `${JSON.stringify({ type: 'item.completed', text: 'GOD_VIEW_INITIALIZATION_RESULT:{"status":"completed","annotationId":"annotation.continue"}' })}\n`,
+    );
+    resumed.close(0);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(updates.at(-1)).toMatchObject({
+      state: 'completed',
+      detail: '标注分析与修改方案已回写；请审核方案和文件范围，批准后 Agent 才会开始实现。',
+    });
   });
 
   it('标注写入在等待上限后仍未进入权威地图时明确失败', async () => {
@@ -301,7 +360,7 @@ describe('AgentInitializationRunner', () => {
       workspaceRoot: '/repo',
       task: () => '地图任务',
       annotationTask: () => '回答标注',
-      annotationAnswered: () => false,
+      annotationCompletion: () => undefined,
       authorize: () => Promise.resolve(true),
       onUpdate: (run) => updates.push(run),
       spawnProcess: vi.fn(() => process.child) as unknown as typeof spawn,

@@ -157,13 +157,19 @@ export function AgentRunPanel(props: {
       )}
       {props.run.state === 'completed' &&
         (props.run.purpose ?? 'initialization') !== 'initialization' && (
-          <p className="agent-run__success">✓ {purpose}已完成并通过复核，地图已刷新。</p>
+          <p className="agent-run__success">{completionMessage(props.run, purpose)}</p>
         )}
       {props.run.state === 'failed' && (
         <p>自动执行失败。你可以保留上方输出用于诊断，或复制手动任务继续。</p>
       )}
     </section>
   );
+}
+
+function completionMessage(run: AgentRunView, purpose: string): string {
+  return run.purpose === 'annotation_answer'
+    ? '✓ 标注分析已回写到权威地图。'
+    : `✓ ${purpose}已完成并通过复核，地图已刷新。`;
 }
 
 function purposeLabel(purpose: AgentRunView['purpose']): string {

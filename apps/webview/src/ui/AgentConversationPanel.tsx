@@ -65,7 +65,7 @@ export function AgentConversationPanel(props: {
   useEffect(() => {
     const element = transcriptRef.current;
     if (element !== null) element.scrollTop = element.scrollHeight;
-  }, [props.conversation?.messages]);
+  }, [props.conversation?.messages, props.run?.state, props.run?.question, actionableProposal?.id]);
   const send = (): void => {
     const clean = message.trim();
     if (clean === '' || active || props.agent === undefined) return;
@@ -164,53 +164,55 @@ export function AgentConversationPanel(props: {
           </section>
         )}
       </div>
-      <div className="agent-conversation__composer">
-        <textarea
-          aria-label="发送给项目 Agent"
-          value={message}
-          disabled={active || props.agent === undefined}
-          placeholder={
-            props.agent === undefined ? '请先配置 Agent' : '询问项目，或描述希望修改的内容…'
-          }
-          onChange={(event) => {
-            setMessage(event.target.value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              send();
+      {!active && actionableProposal === undefined && (
+        <div className="agent-conversation__composer">
+          <textarea
+            aria-label="发送给项目 Agent"
+            value={message}
+            disabled={props.agent === undefined}
+            placeholder={
+              props.agent === undefined ? '请先配置 Agent' : '询问项目，或描述希望修改的内容…'
             }
-          }}
-        />
-        <div>
-          <label>
-            <input
-              type="checkbox"
-              checked={mode === 'change'}
-              onChange={(event) => {
-                setMode(event.target.checked ? 'change' : 'chat');
-              }}
-            />
-            作为修改请求（先审批范围）
-          </label>
-          <button
-            className="empty-map__primary"
-            type="button"
-            disabled={message.trim() === '' || active || props.agent === undefined}
-            onClick={send}
-          >
-            {active ? 'Agent 正在处理…' : '发送'}
-          </button>
+            onChange={(event) => {
+              setMessage(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                send();
+              }
+            }}
+          />
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={mode === 'change'}
+                onChange={(event) => {
+                  setMode(event.target.checked ? 'change' : 'chat');
+                }}
+              />
+              作为修改请求（先审批范围）
+            </label>
+            <button
+              className="empty-map__primary"
+              type="button"
+              disabled={message.trim() === '' || props.agent === undefined}
+              onClick={send}
+            >
+              发送
+            </button>
+          </div>
+          {mode === 'change' && (
+            <small>
+              Agent 会先提交方案；未批准前不会修改任何文件。
+              {props.selectedNode === undefined
+                ? ' 当前未选模块，将使用项目顶层模块作为修改上下文。'
+                : ` 当前限定在 ${props.selectedNode.label}。`}
+            </small>
+          )}
         </div>
-        {mode === 'change' && (
-          <small>
-            Agent 会先提交方案；未批准前不会修改任何文件。
-            {props.selectedNode === undefined
-              ? ' 当前未选模块，将使用项目顶层模块作为修改上下文。'
-              : ` 当前限定在 ${props.selectedNode.label}。`}
-          </small>
-        )}
-      </div>
+      )}
     </section>
   );
 }

@@ -257,6 +257,11 @@
     // eslint-disable-next-line complexity
     postMessage(command) {
       window.__godViewCommands.push(command);
+      const continuationHandled = window.__godViewContinuationHarness.handle(
+        command,
+        snapshot,
+        timestamp,
+      );
       if (command.type === 'ready' || command.type === 'requestSnapshot') {
         queueMicrotask(() => {
           window.dispatchEvent(new MessageEvent('message', { data: snapshot }));
@@ -366,7 +371,7 @@
           }, 20);
         });
       }
-      if (command.type === 'sendAgentMessage') {
+      if (command.type === 'sendAgentMessage' && !continuationHandled) {
         const user = {
           id: 'chat-user-e2e',
           role: 'user',
@@ -426,7 +431,7 @@
       if (command.type === 'exportAgentConversation') {
         window.__godViewConversationExported = true;
       }
-      if (command.type === 'answerAgentQuestion') {
+      if (command.type === 'answerAgentQuestion' && !continuationHandled) {
         queueMicrotask(() => {
           window.dispatchEvent(
             new MessageEvent('message', {

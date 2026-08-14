@@ -29,7 +29,9 @@ export interface AgentInitializationRunnerOptions {
   readonly task: (purpose: AgentRunPurpose) => string;
   readonly projectChatTask?: (message: string) => string;
   readonly annotationTask?: (annotationId: string) => string | undefined;
-  readonly annotationAnswered?: (annotationId: string) => boolean;
+  readonly annotationCompletion?: (
+    annotationId: string,
+  ) => 'answered' | 'proposal_ready' | undefined;
   readonly approvedChangeTask?: (proposalId: string) => string | undefined;
   readonly approvedChangeCompleted?: (proposalId: string) => boolean;
   readonly authorize: (agent: ConfigurableAgent) => Promise<boolean>;
@@ -65,6 +67,7 @@ interface ActiveRun {
   authenticationFailureObserved: boolean;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   completionClaim: Record<string, unknown> | undefined;
+  annotationCompletion: 'answered' | 'proposal_ready' | undefined;
   readonly rawOutput: string[];
 }
 
@@ -162,6 +165,7 @@ export class AgentInitializationRunner {
       authenticationFailureObserved: false,
       retryTimer: undefined,
       completionClaim: undefined,
+      annotationCompletion: undefined,
       rawOutput: [],
     };
     this.#active = run;
@@ -213,6 +217,7 @@ export class AgentInitializationRunner {
       authenticationFailureObserved: false,
       retryTimer: undefined,
       completionClaim: undefined,
+      annotationCompletion: undefined,
       rawOutput: [],
     };
     this.#active = run;
@@ -310,7 +315,9 @@ export class AgentInitializationRunner {
         task,
         '',
         '附加交互规则：本任务不得修改用户源码。开始前必须确认本会话同时具有 get_map 和 answer_annotation；缺少任一工具就立即失败，不要只在终端打印答案。',
-        '必须调用 answer_annotation 成功回写当前标注后，用且仅用一行输出：',
+        `若修改意图不够明确，先调用 answer_annotation 回写分析，再用且仅用一行输出：${questionPrefix}{"question":"需要用户决定的问题","options":[{"id":"recommended","label":"推荐方向","description":"影响"},{"id":"alternative","label":"另一方向","description":"影响"}]}。然后结束本轮并等待用户回答，不得输出完成标记。`,
+        '用户回答后必须在同一个会话继续；修改请求只有在 propose_change 成功且最新 get_map 可见对应方案后才能报告完成。普通解释只需确认标注回答已回写。',
+        '除上述等待用户回答的情况外，必须调用 answer_annotation 成功回写当前标注后，用且仅用一行输出：',
         `${resultPrefix}{"status":"completed","annotationId":"标注 ID"}`,
         `若无法回写，输出：${resultPrefix}{"status":"failed","message":"原因"}。`,
       ].join('\n');
@@ -427,7 +434,7 @@ export class AgentInitializationRunner {
         run.verified = true;
         run.terminal = true;
         this.#commitConversationRun(run);
-        this.#publish(run, 'completed', completedDetail(run.purpose));
+        this.#publish(run, 'completed', completedDetail(run.purpose, run.annotationCompletion));
       } else {
         const message = verificationFailureMessage(run.purpose);
         run.failed = true;
@@ -439,7 +446,7 @@ export class AgentInitializationRunner {
     } else if (code === 0 && !run.failed && (run.verified || run.purpose === 'project_chat')) {
       run.terminal = true;
       this.#commitConversationRun(run);
-      this.#publish(run, 'completed', completedDetail(run.purpose));
+      this.#publish(run, 'completed', completedDetail(run.purpose, run.annotationCompletion));
     } else {
       run.terminal = true;
       this.#commitConversationRun(run);
@@ -626,11 +633,12 @@ export class AgentInitializationRunner {
 
   #isVerifiedCompletion(run: ActiveRun, record: Record<string, unknown>): boolean {
     if (run.purpose === 'annotation_answer') {
-      return (
-        run.annotationId !== undefined &&
-        record['annotationId'] === run.annotationId &&
-        this.#options.annotationAnswered?.(run.annotationId) === true
-      );
+      if (run.annotationId === undefined || record['annotationId'] !== run.annotationId)
+        return false;
+      const completion = this.#options.annotationCompletion?.(run.annotationId);
+      if (completion === undefined) return false;
+      run.annotationCompletion = completion;
+      return true;
     }
     if (run.purpose === 'approved_change') {
       return (
@@ -749,10 +757,15 @@ function startingDetail(purpose: AgentRunPurpose): string {
     : `正在启动${purposeName(purpose)} Agent 会话…`;
 }
 
-function completedDetail(purpose: AgentRunPurpose): string {
+function completedDetail(
+  purpose: AgentRunPurpose,
+  annotationCompletion?: 'answered' | 'proposal_ready',
+): string {
   if (purpose === 'project_chat') return 'Agent 已回复，你可以继续追问。';
   if (purpose === 'annotation_answer') {
-    return '标注分析已回写。若这是修改请求，请审核方案并批准文件范围；批准后 Agent 才会开始实现。';
+    return annotationCompletion === 'proposal_ready'
+      ? '标注分析与修改方案已回写；请审核方案和文件范围，批准后 Agent 才会开始实现。'
+      : '标注分析已回写，但尚未形成修改方案；请补充明确的修改方向后继续。';
   }
   return purpose === 'initialization'
     ? '首次建图任务已结束。请核对地图，并重启其他已打开的 Agent 会话。'

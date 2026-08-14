@@ -45,6 +45,59 @@ test('常驻 Agent 对话在插件内实时回复，并保留明确的修改审�
   });
 });
 
+test('“继续处理”从澄清方向到方案批准、执行、Diff 验收形成完整闭环', async ({ page }) => {
+  const panel = page.getByRole('region', { name: '项目 Agent 对话' });
+  await page.getByRole('checkbox', { name: '作为修改请求（先审批范围）' }).check();
+  await page.getByLabel('发送给项目 Agent').fill('继续处理');
+  await page.getByRole('button', { name: '发送' }).click();
+
+  const run = page.getByRole('region', { name: 'Agent 标注解释子线程进度' });
+  await expect(run).toContainText('希望继续处理哪个方向？');
+  await expect(run).toContainText('answer_annotation 已接受');
+  await expect(panel).not.toContainText('自动执行失败');
+  await run.getByLabel('视觉优化（推荐）').check();
+  await run.getByRole('button', { name: '继续' }).click();
+
+  await expect(run).toContainText('标注分析与修改方案已回写');
+  await expect(run).toContainText('✓ 标注分析已回写到权威地图');
+  const approval = page.getByRole('region', { name: '等待批准并实现' });
+  await expect(approval).toContainText('方案已准备好，等待你批准后实现');
+  await expect(approval).toContainText('继续视觉优化并保持现有功能边界');
+  await approval.getByRole('button', { name: '批准并开始实现' }).click();
+
+  const review = page.getByRole('complementary', { name: 'ChangeSet Diff 审查' });
+  await expect(review).toContainText('src/orders/index.ts');
+  await expect(review.getByRole('region', { name: '地图同步结果' })).toContainText('module.orders');
+  await review.getByRole('button', { name: '接受结果' }).click();
+  await review.getByText(/ChangeSet 历史/u).click();
+  await expect(review).toContainText('已接受');
+
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toEqual(
+    expect.arrayContaining([
+      {
+        type: 'sendAgentMessage',
+        agent: 'codex',
+        message: '继续处理',
+        mode: 'change',
+      },
+      { type: 'answerAgentQuestion', runId: 'continue-run-e2e', answer: 'visual' },
+      expect.objectContaining({
+        type: 'approveProposal',
+        proposalId: 'proposal.continue-e2e',
+        autoStartAgent: 'codex',
+      }),
+      {
+        type: 'reviewChange',
+        changeSetId: 'change.approved.e2e',
+        status: 'accepted',
+      },
+    ]),
+  );
+});
+
 test('Agent 写越界文件前显示扩围文件与原因，并提交专用用户决定', async ({ page }) => {
   await page.evaluate(() => {
     window.dispatchEvent(
@@ -503,8 +556,8 @@ test('创建解释标注、预览上下文、接收安全答案并解决', async
   await expect(
     page.getByText('<script>alert(1)</script> 支付授权在订单确认前完成。'),
   ).toBeVisible();
-  // 页面固定只有两个 harness 与应用三个外链脚本；答案中的标签必须作为文本，不能生成额外脚本节点。
-  expect(await page.locator('script').count()).toBe(4);
+  // 页面固定只有三个专用 harness、宿主 harness 与应用入口；答案中的标签必须作为文本，不能生成额外脚本节点。
+  expect(await page.locator('script').count()).toBe(5);
   await page.getByText('详情与证据').click();
   await expect(
     page

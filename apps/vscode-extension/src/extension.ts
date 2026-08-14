@@ -283,15 +283,16 @@ async function ensureSessionUnlocked(
       const task = formatAnnotationTask(annotationId, service.snapshot);
       return task === undefined ? undefined : withProjectMemory(task);
     },
-    annotationAnswered: (annotationId) => {
+    annotationCompletion: (annotationId) => {
       const annotation = service.snapshot.annotations.get(annotationId);
       const answered = annotation?.messages.some((message) => message.author === 'agent') === true;
-      return annotation?.type === 'change'
-        ? answered &&
-            [...service.snapshot.changeProposals.values()].some(
-              (proposal) => proposal.annotationId === annotationId,
-            )
-        : answered;
+      if (!answered) return undefined;
+      return annotation.type === 'change' &&
+        [...service.snapshot.changeProposals.values()].some(
+          (proposal) => proposal.annotationId === annotationId,
+        )
+        ? 'proposal_ready'
+        : 'answered';
     },
     approvedChangeTask: (proposalId) => {
       const proposal = service.snapshot.changeProposals.get(proposalId);
