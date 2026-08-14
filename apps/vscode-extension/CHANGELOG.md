@@ -2,6 +2,12 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.32 - 2026-08-14
+
+- Classifies authentication failures only from explicit CLI messages or top-level error events instead of scanning every raw JSON event.
+- Prevents paths such as `unauthorized.md` and matching build-output keys from turning a successfully verified Agent run into a false failure.
+- Adds a regression covering successful authoritative ChangeSet completion after both forms of legitimate tool output.
+
 ## 0.3.31 - 2026-08-14
 
 - Treats Git porcelain directory entries such as `app/` and `public/` as covering their expanded Diff files, preserving the correct `preexisting_overlap` attribution.
