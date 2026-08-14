@@ -106,8 +106,9 @@ describe('标注上下文', () => {
       annotations: new Map([[annotation.id, annotation]]),
     });
 
-    expect(task).toContain('GOD_VIEW_USER_QUESTION:');
-    expect(task).toContain('不要输出完成标记');
-    expect(task).toContain('用户回答后在同一会话继续');
+    expect(task).toContain('Codex/Claude 原生提问能力');
+    expect(task).not.toContain('GOD_VIEW_USER_QUESTION:');
+    expect(task).toContain('不要输出 God View 自定义控制标记');
+    expect(task).toContain('用户回答后在同一原生会话继续');
   });
 });

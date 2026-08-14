@@ -10,7 +10,7 @@ export function MapPlaybackControls(props: { readonly store: AppStore }): React.
       <div>
         <strong>
           {playback.replaying
-            ? '正在回放本次会话'
+            ? '正在回放画布调整'
             : playback.pendingCount > 0
               ? '正在渐进绘制'
               : '已跟上最新地图'}
@@ -75,7 +75,7 @@ export function MapPlaybackControls(props: { readonly store: AppStore }): React.
             props.store.replayMapSession();
           }}
         >
-          回放本次会话
+          回放画布调整
         </button>
         <button
           type="button"

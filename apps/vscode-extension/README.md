@@ -6,8 +6,8 @@
 > 持续建图、GuidedStory、原位解释、修改方案、用户批准、monitored ChangeSet、
 > Git Diff 摘要与用户验收已形成闭环，并由单元、Chromium 和 Extension Host 自动化覆盖。
 > 扩展未发布到 Marketplace。当前 VSIX 已内置 `god-view` Gateway/CLI，安装后可通过
-> `God View: Configure Agent MCP` 显式配置并复验当前工作区的 Codex 或 Claude Code；
-> 空地图面板可直接启动新的受控 Agent 会话完成首次建图；地图完成后可在工具栏选择
+> `God View: Configure Native Agent` 显式配置并复验当前工作区的 MCP 与上下文 hook；
+> 空地图面板可直接打开官方 Codex/Claude TUI 完成首次建图；地图完成后可在工具栏选择
 > **重新初始化**，根据当前仓库状态完整重绘；`God View: Copy Agent Setup`
 > 和可复制任务保留为手动接入兜底。
 >
@@ -40,21 +40,21 @@
   alias、运行时调用和其他语言明确保持未验证。
 - Agent 可提交三类声明式讲解，用户可播放、暂停、逐步导航、变速、重播和退出；
   减少动态效果设置会关闭镜头补间。
-- 用户可在节点上创建解释/风险/修改标注；创建后插件内部自动启动独立 Agent 子线程并实时
-  显示输出，只有 `answer_annotation` 真正回写权威地图后才显示完成与原位结构化答案；
-  “复制手动任务”仅保留为内部 Agent 无法启动时的兜底；
-- “要求修改”会先让只读 Agent 回答并提交文件/结构/风险/验证方案；用户缩小并批准范围后，
-  插件内部直接启动可写 Agent 子线程。编辑、验证、节点与关系更新、ChangeSet 完成和 Git
-  Diff 待验收必须全部成功，任务才会显示完成；接受 Diff 后原标注自动标为已解决；
+- 扩展直接承载官方 Codex/Claude TUI，不镜像对话、提问、权限或会话恢复；这些交互全部在
+  官方终端完成。UserPromptSubmit hook 每轮注入轻量画布摘要，完整上下文与更新通过 MCP；
+- 用户可在节点上创建解释/风险/修改标注；任务发送到官方终端，只有 `answer_annotation`
+  真正回写权威地图后才显示原位结构化答案；“复制手动任务”保留为兜底；
+- “要求修改”由原生 Agent 提交文件/结构/风险/验证方案；用户缩小并批准范围后，任务发送回
+  原生终端。编辑、验证、地图同步、ChangeSet 完成和 Git Diff 待验收必须全部落库；
 - Agent 可申请写入并提交方案；用户缩小范围后批准，Gateway 以时效令牌启动 ChangeSet；
 - 托管编辑 Agent 准备修改 `approvedScope` 外的文件时，必须先通过
   `request_scope_expansion` 提交文件列表和原因并停止本轮；用户批准后，扩展宿主先写入
   权威审批事件、扩大本次 ChangeSet 范围，再恢复同一个 Codex/Claude 会话。拒绝不会扩围；
-- 空地图中可自动启动新的 Codex/Claude CLI 会话，流式显示进度、停止进程，并在 Agent
-  提出 2–3 个结构化选项时让用户选择后恢复同一会话；
+- 空地图中可打开新的官方 Codex/Claude CLI 会话；原生终端负责流式输出、结构化提问、
+  系统权限审批、停止与恢复，God View 不再维护第二套会话状态机；
 - 已有地图可由用户确认后重新初始化：旧地图在新 ChangeSet 完成前保持可用，职责仍一致的
   节点/关系保留稳定 ID，变化区域更新，过时关系与节点被清理；活动 ChangeSet 期间禁止重绘；
-- 地图与底部 Agent 进度/输出之间可拖动调整高度，也可用方向键微调或双击恢复默认值；
+- 地图与底部原生 Agent 入口之间可拖动调整高度，也可用方向键微调或双击恢复默认值；
   高度按工作区保存，调整时只 resize 画布，不重新布局或移动模块；
 - 普通点击模块只高亮并打开详情，不移动镜头或隐藏其他模块；层级以“项目概览 / 模块全图 /
   文件明细”表达，局部视图会醒目标明隐藏数量，并始终提供“显示完整模块图”返回入口；
@@ -66,18 +66,16 @@
   单独标为 `preexisting_overlap`，不会仅因不在范围内就把本次 ChangeSet 判成越界；接受不会
   执行 Git add/commit/push。
 - ChangeSet 历史可按完成时间查看状态、文件范围与保存的 Diff 元数据，并重新打开仍可用的 Git Diff。
-- 自动首次建图可停止由扩展启动的 CLI 子进程；中断可写 ChangeSet 仍只结束 God View
-  状态并保留现有文件修改，不会终止用户在别处打开的 Agent 会话。
+- 画布记录本次打开后收到的 MCP `map/patch`，支持暂停、逐步、变速、跳到最新和回放调整；
+  中断可写 ChangeSet 只结束 God View 状态并保留现有文件修改，不会终止官方终端会话。
 - 打开或切换分支时执行 30 天本地保留压缩：当前地图、未解决/固定标注保留；过期原始事件和
   已解决且未固定的对话正文被清理。用户也可用清理命令删除当前工作区的全部 God View 本地数据。
 
 ## 它不做什么
 
 - 不直接修改你的代码；批准令牌授予外部 Agent 工作流，God View 负责协议、监控和审查；
-- 不读取 Agent 密钥或登录态。自动首次建图只新建 CLI 子进程，不能接管或热加载已经打开的
-  Agent UI 会话；
-- 自动建图为 Codex 设置只读 sandbox，为 Claude 仅开放读取和 God View MCP 工具并禁用
-  Bash/Edit/Write；用户自行启动的 Agent 仍是 monitored 模式，God View 不能阻止其写入；
+- 不读取 Agent 密钥或登录态，也不覆盖 Codex/Claude 的原生 sandbox、approval 或权限设置；
+  已经打开的其他 Agent 会话不会热加载新 MCP/hook，需要退出后重开；
 - 托管编辑的扩围审批是协议与宿主状态机边界，不是逐文件操作系统沙箱；若 Agent 进程绕过
   工具先写文件，God View 会拒绝事后补批、标记 `scope_violation` 并保留 Diff；
 - 不自动创建分支/worktree，也不执行 Git add、commit、push、回滚或删除越界文件；
@@ -92,8 +90,8 @@
 | `God View: Open Project Map`             | 打开项目地图                                                                      |
 | `Reveal in God View`                     | 从当前编辑器定位到对应节点                                                        |
 | `God View: Generate Agent Task`          | 生成一段可粘贴给 Agent 的任务描述                                                 |
-| `God View: Configure Agent MCP`          | 确认后配置所选 Agent，并用官方 `mcp get` 立即复验                                 |
-| `God View: Copy Agent Setup`             | 复制内置 Gateway 的手动 MCP 接入配置                                              |
+| `God View: Configure Native Agent`       | 配置所选 Agent 的 MCP 与上下文 hook，并立即复验                                   |
+| `God View: Copy Agent Setup`             | 复制内置 Gateway 的手动 MCP 与 hook 接入配置                                      |
 | `God View: Show Agent Adapters`          | 只读检测 Codex/Claude 及显示能力                                                  |
 | `God View: Show Diagnostics`             | 打开输出面板并记录当前地图状态                                                    |
 | `God View: Clear Current Workspace Data` | 确认后清除当前工作区的地图、事件、标注、Diff 元数据、布局与接入确认；不碰源码/Git |
@@ -102,15 +100,15 @@
 ## 运行方式
 
 安装 VSIX 后，先执行 `God View: Open Project Map`，再执行
-`God View: Configure Agent MCP` 并选择 Codex 或 Claude Code。扩展会先展示数据边界与
-具体工作区，只有用户确认后才调用该 Agent 的官方 CLI 写入配置，并立即执行 `mcp get god-view`
-复验；不会读取 Agent 密钥。若已有同名配置，必须再次确认才能替换。取消不会写入任何配置。
+`God View: Configure Native Agent` 并选择 Codex 或 Claude Code。扩展会先展示数据边界与
+具体工作区，只有用户确认后才写入该 Agent 的 MCP 与 UserPromptSubmit hook，并复验两者；
+不会读取 Agent 密钥。若已有同名冲突配置，必须再次确认才能替换。取消不会写入任何配置。
 
 配置成功后，**退出已经打开的 Agent 会话，并在当前工作区目录重新启动**。MCP 工具清单在
 会话启动时加载，旧会话不会热加载 `get_map` 等工具。空地图面板会显示绿色勾选和已复验的
-CLI/工作区信息；点击 **启动首次建图** 后，扩展会新建一个受控会话并展示输出。若 Agent
-需要决策，直接在面板选择；只有最终 `get_map` 的 revision、节点数和覆盖数字通过结构化
-复核后才显示完成。自动配置或执行失败时，可使用 `God View: Copy Agent Setup` 和
+CLI/工作区信息；点击 **在原生终端启动首次建图** 后，扩展会打开官方 TUI。Agent 的提问、
+系统权限申请和输出都在该终端处理；画布只消费 MCP 的权威地图事件。配置失败时可使用
+`God View: Copy Agent Setup` 和
 `God View: Generate Agent Task` 手动继续。
 
 地图完成后，工具栏中的 **重新初始化** 会再次确认影响，再启动独立的全图重绘任务。它不会
@@ -140,8 +138,8 @@ Agent 靠它确定事件归属哪张地图——**这一步必须先做**。
 
 ### 3. 接上 Agent
 
-推荐在 Extension Development Host 中执行 **God View: Configure Agent MCP**，确认后即可从
-空地图面板启动新的首次建图会话。已经打开的其他 Agent 会话仍需退出并重开才能加载 MCP。
+推荐在 Extension Development Host 中执行 **God View: Configure Native Agent**，确认后即可从
+空地图面板打开官方首次建图会话。已经打开的其他 Agent 会话仍需退出并重开才能加载 MCP/hook。
 下面的命令只用于调试手动接入：
 
 源码开发时也可以直接使用构建进 VSIX 的 Gateway。支持 MCP 的 Agent：

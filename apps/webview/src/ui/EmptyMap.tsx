@@ -1,27 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CoverageReport } from '@god-view/protocol';
-import type {
-  AgentConfigurationView,
-  AgentRunView,
-  ConfigurableAgent,
-} from '@god-view/webview-bridge';
-import { AgentRunPanel } from './AgentRunPanel.js';
+import type { AgentConfigurationView, ConfigurableAgent } from '@god-view/webview-bridge';
 
 export interface EmptyMapProps {
   readonly coverage: CoverageReport | undefined;
   readonly agents: readonly AgentConfigurationView[];
   readonly selectedAgent: ConfigurableAgent | undefined;
-  readonly run: AgentRunView | undefined;
   readonly onGenerateAgentTask: () => void;
   readonly onCopyAgentSetup: () => void;
   readonly onConfigureAgent: (agent: ConfigurableAgent) => void;
   readonly onRefreshAgentStatus: () => void;
   readonly onStartInitialization: (agent: ConfigurableAgent) => void;
-  readonly onAnswerQuestion: (runId: string, answer: string) => void;
-  readonly onCancelRun: (runId: string) => void;
 }
 
-/** 首次建图：配置、自动执行、进度和必要的人机选择都留在同一个可审计界面。 */
+/** 首次建图由官方 Agent 终端执行，God View 只提供 MCP、hook 与画布反馈。 */
 export function EmptyMap(props: EmptyMapProps): React.JSX.Element {
   const total = (props.coverage?.classified ?? 0) + (props.coverage?.unclassified ?? 0);
   const configured = props.agents.filter((agent) => agent.configuration === 'current');
@@ -44,8 +36,8 @@ export function EmptyMap(props: EmptyMapProps): React.JSX.Element {
         <p className="empty-map__eyebrow">尚未建立项目地图</p>
         <h1 id="empty-map-title">让 Agent 基于代码事实创建第一版地图</h1>
         <p>
-          God View 不需要账号，也不会索取 Agent 密钥。自动建图会启动一个新的只读/计划会话；
-          它可以写地图事件，但不能修改你的项目源码。
+          God View 不需要账号，也不会索取 Agent 密钥。点击后会打开官方 Codex/Claude
+          终端；对话、权限申请和会话恢复都由它原生处理。
         </p>
 
         <dl className="empty-map__facts" aria-label="首次建图范围">
@@ -118,12 +110,12 @@ export function EmptyMap(props: EmptyMapProps): React.JSX.Element {
           <button
             className="empty-map__primary"
             type="button"
-            disabled={activeAgent === undefined || isRunActive(props.run)}
+            disabled={activeAgent === undefined}
             onClick={() => {
               if (activeAgent !== undefined) props.onStartInitialization(activeAgent.agent);
             }}
           >
-            {isRunActive(props.run) ? 'Agent 正在建图…' : '启动首次建图'}
+            在原生终端启动首次建图
           </button>
           <button className="chip" type="button" onClick={props.onGenerateAgentTask}>
             复制手动任务
@@ -139,17 +131,9 @@ export function EmptyMap(props: EmptyMapProps): React.JSX.Element {
           <p className="empty-map__note">请先配置并复验至少一个 Agent，才能自动启动首次建图。</p>
         )}
 
-        {props.run !== undefined && (
-          <AgentRunPanel
-            run={props.run}
-            onAnswer={props.onAnswerQuestion}
-            onCancel={props.onCancelRun}
-          />
-        )}
-
         <p className="empty-map__note">
-          Gateway 已随扩展安装。配置会写入所选 Agent 的 MCP 设置并立即复验；已有 Agent
-          会话不会热加载新工具，需退出后在当前目录重开。
+          Gateway 已随扩展安装。配置会写入所选 Agent 的 MCP 与 UserPromptSubmit hook； 已有 Agent
+          会话不会热加载新配置，需要退出后重新打开。
         </p>
       </div>
     </section>
@@ -168,8 +152,4 @@ function configurationLabel(state: AgentConfigurationView['configuration']): str
     conflict: '配置冲突',
     error: '检查失败',
   }[state];
-}
-
-function isRunActive(run: AgentRunView | undefined): boolean {
-  return run !== undefined && ['starting', 'running', 'awaiting_input'].includes(run.state);
 }

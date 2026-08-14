@@ -7,6 +7,7 @@ import {
   inspectAgentMcpConfiguration,
   type ConfigurableAgent,
 } from './agent-mcp-configuration.js';
+import { configureAgentHook, inspectAgentHookConfiguration } from './agent-hook-configuration.js';
 import { commandIds } from './constants.js';
 import type { Logger } from './logger.js';
 import type { RuntimeAssetState } from './runtime-assets.js';
@@ -98,7 +99,7 @@ export async function configureAgent(
     gatewayEntry: assets.gatewayEntry,
     workspaceRoot: current.identity.root.fsPath,
   } as const;
-  const status = await inspectAgentMcpConfiguration(options);
+  const status = await inspectAgentIntegration(options);
   if (status.state === 'current') {
     await markConfigured(context, logger, current, assets, agent, false);
     return;
@@ -106,10 +107,10 @@ export async function configureAgent(
   const displayName = agent === 'codex' ? 'Codex' : 'Claude Code';
   const action = await window.showWarningMessage(
     [
-      `${displayName} 尚未接入当前工作区的 God View MCP。`,
+      `${displayName} 尚未完整接入当前工作区的 God View。`,
       status.state === 'conflict'
         ? '已存在同名但指向其他 runtime/workspace 的配置，将先移除再替换。'
-        : '将写入 Agent 自己的 MCP 配置；不会读取登录态或密钥。',
+        : '将写入 Agent 自己的 MCP 与上下文 hook 配置；不会读取登录态或密钥。',
       `工作区：${current.identity.root.fsPath}`,
       '现有 Agent 会话不会热加载新工具，配置成功后必须退出并在这个目录重开。',
     ].join('\n'),
@@ -118,7 +119,9 @@ export async function configureAgent(
   );
   if (action === undefined) return;
   try {
-    await configureAgentMcp(options, status.state === 'conflict');
+    const mcp = await inspectAgentMcpConfiguration(options);
+    if (mcp.state !== 'current') await configureAgentMcp(options, mcp.state === 'conflict');
+    await configureAgentHook(options);
     logger.info('agentMcp.configured', {
       workspaceId: current.identity.id,
       agent,
@@ -133,7 +136,7 @@ export async function configureAgent(
     });
     await publishAgentStatus(context, logger, current, assets);
     const fallback = await window.showErrorMessage(
-      `${displayName} MCP 配置或复验失败。可以复制手动命令，并在终端执行后重开 Agent 会话。`,
+      `${displayName} MCP 或上下文 hook 配置/复验失败。可以复制手动命令，并在终端执行后重开 Agent 会话。`,
       '复制手动命令',
       '查看诊断',
     );
@@ -181,24 +184,44 @@ async function collectAgentStatus(
         return { ...base, configuration: 'missing', detail: '未检测到 CLI，请先安装并加入 PATH。' };
       if (assets === undefined)
         return { ...base, configuration: 'error', detail: 'Gateway 运行时尚未就绪，请查看诊断。' };
-      const status = await inspectAgentMcpConfiguration({
+      const status = await inspectAgentIntegration({
         agent: adapter.id,
         runtimeExecutable: process.execPath,
         gatewayEntry: assets.gatewayEntry,
         workspaceRoot: current.identity.root.fsPath,
       });
       return status.state === 'current'
-        ? { ...base, configuration: 'current', detail: 'MCP god-view 已由官方 get 命令复验。' }
+        ? {
+            ...base,
+            configuration: 'current',
+            detail: '原生会话、MCP 与每轮上下文 hook 已配置并复验。',
+          }
         : {
             ...base,
             configuration: status.state,
             detail:
               status.state === 'conflict'
                 ? '已有同名配置，但不属于当前工作区。'
-                : '尚未配置当前工作区的 MCP god-view。',
+                : '尚未完整配置当前工作区的 MCP 与上下文 hook。',
           };
     }),
   );
+}
+
+async function inspectAgentIntegration(options: {
+  readonly agent: ConfigurableAgent;
+  readonly runtimeExecutable: string;
+  readonly gatewayEntry: string;
+  readonly workspaceRoot: string;
+}): Promise<{ readonly state: 'missing' | 'current' | 'conflict' | 'error' }> {
+  const [mcp, hook] = await Promise.all([
+    inspectAgentMcpConfiguration(options),
+    inspectAgentHookConfiguration(options),
+  ]);
+  if (mcp.state === 'current' && hook === 'current') return { state: 'current' };
+  if (hook === 'error') return { state: 'error' };
+  if (mcp.state === 'conflict' || hook === 'conflict') return { state: 'conflict' };
+  return { state: 'missing' };
 }
 
 async function markConfigured(
@@ -213,7 +236,7 @@ async function markConfigured(
   await publishAgentStatus(context, logger, current, assets);
   const name = agent === 'codex' ? 'Codex' : 'Claude Code';
   await window.showInformationMessage(
-    `${name} MCP ${newlyConfigured ? '已配置并通过复验' : '配置已与当前工作区一致'}。请退出当前 ${name} 会话，在这个工作区目录重新启动，然后先让 Agent 调用 get_map；旧会话不会获得新工具。`,
+    `${name} 的 MCP 与上下文 hook ${newlyConfigured ? '已配置并通过复验' : '已与当前工作区一致'}。请退出当前 ${name} 会话，在这个工作区目录重新启动，然后先让 Agent 调用 get_map；旧会话不会获得新配置。`,
     { modal: true },
   );
 }

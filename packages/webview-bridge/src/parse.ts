@@ -177,37 +177,29 @@ function parseAgentCommand(record: Record_): Result<WebviewCommand, ProtocolErro
   if (type === 'startAnnotationAnswer') return parseStartAnnotationAnswer(record);
   if (type === 'startApprovedChange') return parseStartApprovedChange(record);
   if (type === 'startMapCompletion') return parseStartMapCompletion(record);
-  if (type === 'startInitialization' || type === 'startReinitialization') {
+  if (
+    type === 'startInitialization' ||
+    type === 'startReinitialization' ||
+    type === 'openAgentTerminal'
+  ) {
     return ['codex', 'claude-code'].includes(String(record['agent']))
       ? ok({ type, agent: record['agent'] as 'codex' | 'claude-code' })
       : invalid('startInitialization 缺少受支持的 agent', '/agent');
   }
-  const runId = record['runId'];
-  if (typeof runId !== 'string' || runId === '' || runId.length > 200) {
-    return invalid(`${String(type)} 缺少合法 runId`, '/runId');
-  }
-  if (type === 'cancelAgentRun') return ok({ type, runId });
-  const answer = record['answer'];
-  return typeof answer === 'string' && answer.trim() !== '' && answer.length <= 4000
-    ? ok({ type: 'answerAgentQuestion', runId, answer })
-    : invalid('answerAgentQuestion 缺少合法 answer', '/answer');
+  return invalid(`不支持的 Agent 命令：${String(type)}`, '/type');
 }
 
 function parseScopeExpansionDecision(record: Record_): Result<WebviewCommand, ProtocolError> {
-  const runId = record['runId'];
   const requestId = record['requestId'];
   const changeSetId = record['changeSetId'];
   const decision = record['decision'];
-  return typeof runId === 'string' &&
-    runId !== '' &&
-    typeof requestId === 'string' &&
+  return typeof requestId === 'string' &&
     requestId !== '' &&
     typeof changeSetId === 'string' &&
     changeSetId !== '' &&
     ['approved', 'rejected'].includes(String(decision))
     ? ok({
         type: 'decideScopeExpansion',
-        runId,
         requestId,
         changeSetId,
         decision: decision as 'approved' | 'rejected',
@@ -332,12 +324,11 @@ export function parseWebviewCommand(input: unknown): Result<WebviewCommand, Prot
     [
       'startInitialization',
       'startReinitialization',
+      'openAgentTerminal',
       'startMapCompletion',
       'startAnnotationAnswer',
       'startApprovedChange',
-      'answerAgentQuestion',
       'decideScopeExpansion',
-      'cancelAgentRun',
       'sendAgentMessage',
     ].includes(String(type))
   ) {
@@ -356,7 +347,6 @@ export function parseWebviewCommand(input: unknown): Result<WebviewCommand, Prot
       'copyAgentSetup',
       'configureAgent',
       'refreshAgentStatus',
-      'exportAgentConversation',
     ].includes(String(type))
   )
     return parseImmediateCommand(record);
@@ -441,16 +431,10 @@ function parseFacts(record: Record_): Result<ExtensionEvent, ProtocolError> {
 }
 
 /** 解析来自扩展的事件。Webview 同样不信任宿主消息，避免注入伪造状态。 */
-// eslint-disable-next-line complexity -- exhaustive untrusted-message boundary.
 export function parseExtensionEvent(input: unknown): Result<ExtensionEvent, ProtocolError> {
   const record = asRecord(input);
   if (record === undefined) {
     return invalid('消息必须是对象');
-  }
-  if (record['type'] === 'agent/conversation') {
-    return asRecord(record['conversation']) !== undefined
-      ? ok(record as unknown as ExtensionEvent)
-      : invalid('agent/conversation 缺少 conversation', '/conversation');
   }
   switch (record['type']) {
     case 'map/snapshot':
@@ -467,10 +451,6 @@ export function parseExtensionEvent(input: unknown): Result<ExtensionEvent, Prot
       return Array.isArray(record['agents'])
         ? ok(record as unknown as ExtensionEvent)
         : invalid('agent/status 缺少 agents', '/agents');
-    case 'agent/run':
-      return asRecord(record['run']) !== undefined
-        ? ok(record as unknown as ExtensionEvent)
-        : invalid('agent/run 缺少 run', '/run');
     case 'error':
       return typeof record['code'] === 'string' && typeof record['message'] === 'string'
         ? ok(record as unknown as ExtensionEvent)

@@ -25,33 +25,26 @@
     const proposal = snapshot.document.changeProposals.find(
       (item) => item.id === command.proposalId,
     );
-    const annotation = snapshot.document.annotations.find(
-      (item) => item.id === proposal?.annotationId,
-    );
-    if (proposal === undefined || annotation === undefined) return;
-    dispatch({
-      type: 'agent/run',
-      run: {
-        runId: 'approved-change-run-e2e',
-        agent: command.agent ?? command.autoStartAgent,
-        state: 'running',
-        output: [
-          'start_approved_change 已接受，开始修改批准范围。',
-          '正在编辑 src/orders/index.ts…',
-          '正在更新 Orders 模块和支付依赖关系…',
-        ],
-        detail: 'Agent 正在编辑代码、运行验证并同步项目视图…',
-        restartRequired: false,
-        purpose: 'approved_change',
-        proposalId: proposal.id,
-      },
-    });
-    const inProgress = { ...annotation, status: 'in_progress' };
-    snapshot.document.annotations = [inProgress];
-    patch(snapshot, { upsertedAnnotations: [inProgress] });
+    if (proposal === undefined) return;
+    const active = {
+      changeSetId: 'change.approved.e2e',
+      sessionId: 'native-agent-e2e',
+      intent: proposal.summary,
+      startedAt: timestamp,
+      proposalId: proposal.id,
+      approvalToken: proposal.approval?.token,
+      approvedScope: proposal.approval?.approvedScope,
+      permissionMode: 'monitored',
+      touchedNodeIds: [],
+      touchedEdgeIds: [],
+      executionStatus: 'in_progress',
+    };
+    snapshot.document.activeChanges = [active];
+    patch(snapshot, { upsertedActiveChanges: [active] });
+
     setTimeout(() => {
       const completed = {
-        changeSetId: 'change.approved.e2e',
+        changeSetId: active.changeSetId,
         proposalId: proposal.id,
         status: 'pending_review',
         completedAt: timestamp,
@@ -77,7 +70,6 @@
         },
         note: '优化订单校验；已同步 Orders 模块和支付依赖关系。',
       };
-      snapshot.document.completedChanges = [completed];
       const updatedNode = {
         ...snapshot.document.nodes.find((node) => node.id === 'module.orders'),
         responsibility: 'Validates orders, authorizes payment and persists accepted results.',
@@ -86,6 +78,8 @@
         ...snapshot.document.edges.find((edge) => edge.id === 'edge.orders-payments'),
         reason: 'Authorize payment after the strengthened order validation',
       };
+      snapshot.document.activeChanges = [];
+      snapshot.document.completedChanges = [completed];
       snapshot.document.nodes = snapshot.document.nodes.map((node) =>
         node.id === updatedNode.id ? updatedNode : node,
       );
@@ -95,26 +89,8 @@
       patch(snapshot, {
         upsertedNodes: [updatedNode],
         upsertedEdges: [updatedEdge],
+        removedActiveChangeIds: [active.changeSetId],
         upsertedCompletedChanges: [completed],
-      });
-      dispatch({
-        type: 'agent/run',
-        run: {
-          runId: 'approved-change-run-e2e',
-          agent: command.agent ?? command.autoStartAgent,
-          state: 'completed',
-          output: [
-            'start_approved_change 已接受，开始修改批准范围。',
-            '正在编辑 src/orders/index.ts…',
-            '正在更新 Orders 模块和支付依赖关系…',
-            '订单测试通过。',
-            'complete_change 已接受；代码、模块和关系视图已同步。',
-          ],
-          detail: '批准后编辑已完成并通过最终复核；地图已刷新。',
-          restartRequired: false,
-          purpose: 'approved_change',
-          proposalId: proposal.id,
-        },
       });
     }, 30);
   }
@@ -134,18 +110,19 @@
             approvedScope: command.approvedScope,
             permissionMode: 'monitored',
             approvedAt: timestamp,
-            expiresAt: '2026-08-11T00:15:00.000Z',
+            expiresAt: '2026-08-15T00:15:00.000Z',
             branchKey: 'main',
             mapRevision: snapshot.document.revision,
             gitRevision: 'head-e2e',
             preexistingChanges: [],
           },
         };
-        snapshot.document.changeProposals = [approved];
+        snapshot.document.changeProposals = snapshot.document.changeProposals.map((proposal) =>
+          proposal.id === approved.id ? approved : proposal,
+        );
         patch(snapshot, { upsertedChangeProposals: [approved] });
-        if (command.autoStartAgent !== undefined) {
+        if (command.autoStartAgent !== undefined)
           setTimeout(() => run(command, snapshot, timestamp), 5);
-        }
         return true;
       }
       if (command.type === 'startApprovedChange') {

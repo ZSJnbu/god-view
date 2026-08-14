@@ -110,7 +110,7 @@ function annotationInstructions(changeRequest: boolean): readonly string[] {
   return changeRequest
     ? [
         '这是修改意图：先用 answer_annotation 说明理解、影响与不确定点；如果修改目标清晰，再调用 request_write_access，并基于最新 get_map 的地图/Git 基线调用 propose_change。',
-        '如果信息不足以形成可批准方案，必须在 answer_annotation 回写不确定点之后，用 GOD_VIEW_USER_QUESTION: 输出 2–3 个互斥的具体方向并结束本轮；不要输出完成标记。用户回答后在同一会话继续，形成方案后再完成。',
+        '如果信息不足以形成可批准方案，先用 answer_annotation 回写不确定点，再使用 Codex/Claude 原生提问能力请用户选择 2–3 个互斥方向并等待；用户回答后在同一原生会话继续。不要输出 God View 自定义控制标记。',
         '方案必须列出文件范围、结构变化、风险和验证计划。提交方案后停止，等待用户在插件内缩小范围并批准；批准前不得修改任何文件。',
       ]
     : [

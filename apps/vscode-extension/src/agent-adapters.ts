@@ -75,9 +75,9 @@ export function describeAdapter(status: AgentAdapterStatus): string {
     : '未检测到';
   return [
     `${status.displayName}：${installed}`,
-    '接入：可从首次建图面板启动新的受控 CLI 会话，也保留 MCP 手动接入',
+    '接入：由 God View 打开官方 CLI 终端，并通过 MCP 与 UserPromptSubmit hook 连接画布',
     '写入权限：monitored（检测越界，不是运行时强制）',
-    '取消/流式：首次建图支持进度输出、结构化选择和停止进程',
+    '权限/恢复：由 Codex 或 Claude Code 原生终端显示、批准和恢复',
     '数据边界：Agent 可能把代码发送到云端，请遵循其数据政策',
   ].join('\n');
 }

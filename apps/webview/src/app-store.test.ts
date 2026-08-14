@@ -94,17 +94,6 @@ describe('AppStore 事件处理', () => {
 
   it('快速写入多个 revision 时支持暂停、逐步、跳到最新和整段回放', () => {
     const store = hydratedStore();
-    store.receive({
-      type: 'agent/run',
-      run: {
-        runId: 'run-map',
-        agent: 'codex',
-        state: 'running',
-        output: [],
-        restartRequired: false,
-        purpose: 'reinitialization',
-      },
-    });
     for (const [revision, id] of [
       [2, 'c'],
       [3, 'd'],
@@ -176,7 +165,7 @@ describe('AppStore 事件处理', () => {
     expect(store.getState().sync).toBe('validating');
   });
 
-  it('保存 Agent 配置状态与自动运行进度', () => {
+  it('保存原生 Agent 配置状态', () => {
     const store = hydratedStore();
     store.receive({
       type: 'agent/status',
@@ -193,20 +182,8 @@ describe('AppStore 事件处理', () => {
         },
       ],
     });
-    store.receive({
-      type: 'agent/run',
-      run: {
-        runId: 'run-1',
-        agent: 'codex',
-        state: 'running',
-        output: ['正在分析入口'],
-        restartRequired: false,
-      },
-    });
-
     expect(store.getState().selectedAgent).toBe('codex');
     expect(store.getState().agents[0]?.configuration).toBe('current');
-    expect(store.getState().agentRun?.output).toEqual(['正在分析入口']);
   });
 
   it('保存停靠或浮动的 Agent 视窗偏好', () => {
@@ -217,21 +194,6 @@ describe('AppStore 事件处理', () => {
     });
     expect(store.getState().agentPaneView.mode).toBe('floating');
     expect(store.getState().agentPaneView.floatingBounds.width).toBe(680);
-  });
-
-  it('保存常驻 Agent 对话线程', () => {
-    const store = hydratedStore();
-    store.receive({
-      type: 'agent/conversation',
-      conversation: {
-        threadId: 'thread-1',
-        agent: 'codex',
-        state: 'running',
-        activeRunId: 'run-1',
-        messages: [{ id: 'm1', role: 'user', body: '解释订单', createdAt: '2026-08-13T00:00:00Z' }],
-      },
-    });
-    expect(store.getState().agentConversation?.messages[0]?.body).toBe('解释订单');
   });
 
   it('map/facts 在图不变的情况下更新漂移与覆盖率', () => {

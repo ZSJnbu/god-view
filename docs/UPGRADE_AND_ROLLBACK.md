@@ -54,7 +54,7 @@ Gateway with an Agent. Installing the VSIX upgrades the runtime to protocol 1.3,
 that was already running keeps its startup-time tool list. After installing 0.2.0:
 
 1. Reload VS Code and run **God View: Open Project Map** for the target workspace.
-2. Run **God View: Configure Agent MCP**, choose the Agent, review the data boundary and confirm.
+2. Run **God View: Configure Native Agent**, choose the Agent, review the data boundary and confirm.
 3. Require the success message that says the official `mcp get god-view` verification passed.
 4. Exit the existing Codex or Claude Code session, start a new one in the same workspace directory,
    and call `get_map` before pasting an initialization or maintenance task.
@@ -87,7 +87,7 @@ semantics without being restarted.
 Version 0.3.1 adds MCP-standard safety annotations to the bundled Gateway. Without these annotations,
 Codex CLI 0.146.1 treated even `get_map` as requiring an interactive MCP approval and immediately
 reported `user cancelled MCP tool call` when launched through non-interactive `codex exec`. Reload VS
-Code after installation, run **God View: Configure Agent MCP** again, and restart any old Agent/MCP
+Code after installation, run **God View: Configure Native Agent** again, and restart any old Agent/MCP
 processes so they load the 0.3.1 Gateway.
 
 ### 0.3.1 → 0.3.2
@@ -97,12 +97,25 @@ the existing lease and ask the user before ending it, rather than retrying `begi
 invisible `CONCURRENT_CHANGE_SET`. The automatic-run panel also displays the structured domain failure
 reason instead of suggesting an authentication failure when login is healthy.
 
+### 0.3.35 → 0.3.36
+
+Version 0.3.36 removes God View's separate Agent conversation/run state machine. The extension now
+opens the official Codex or Claude Code terminal, preserves that Agent's native sandbox and approval
+settings, injects lightweight canvas context through a project `UserPromptSubmit` hook, and keeps
+structured canvas writes in MCP. System permission requests, questions, history and recovery therefore
+appear in the official terminal. Re-run **God View: Configure Native Agent** so the workspace receives
+both the MCP registration and hook; Codex may ask you to trust the project hook on first use.
+
+Scope-expansion requests are now read from the authoritative active ChangeSet. Approving or rejecting
+one updates that ChangeSet and automatically tells the current native terminal to continue. Canvas
+replay is driven directly by `map/patch`, so it works without the removed `agent/run` event.
+
 After any upgrade:
 
 1. Run **God View: Show Diagnostics** and require `runtimeGateway=ready` with the installed
    extension version.
-2. Run **God View: Configure Agent MCP** again when diagnostics ask for it, require successful
-   verification, then exit and restart the Agent session.
+2. Run **God View: Configure Native Agent** again when diagnostics ask for it, require successful MCP
+   and hook verification, then exit and restart the Agent session.
 3. Open an existing map and verify that its branch, revision, annotations and history are
    present before accepting the release.
 
@@ -120,7 +133,7 @@ second fallible write while attempting to restore an older bundle.
 3. Run **God View: Show Diagnostics**. If the stored protocol major is newer than the rolled-back
    reader, do not write new events; reinstall the newer extension or restore a pre-upgrade data
    backup.
-4. Run **God View: Configure Agent MCP** and restart the Agent session so the stable runtime is
+4. Run **God View: Configure Native Agent** and restart the Agent session so the stable runtime is
    refreshed from the rolled-back VSIX.
 
 Before a release that changes storage or protocol major version, make a copy of the workspace's

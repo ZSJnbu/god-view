@@ -109,7 +109,6 @@ export function App({
           coverage={state.map.coverage}
           agents={state.agents}
           selectedAgent={state.selectedAgent}
-          run={state.agentRun}
           onGenerateAgentTask={() => {
             messenger.send({ type: 'generateAgentTask' });
           }}
@@ -122,12 +121,6 @@ export function App({
           onRefreshAgentStatus={refreshAgentStatus}
           onStartInitialization={(agent) => {
             messenger.send({ type: 'startInitialization', agent });
-          }}
-          onAnswerQuestion={(runId, answer) => {
-            messenger.send({ type: 'answerAgentQuestion', runId, answer });
-          }}
-          onCancelRun={(runId) => {
-            messenger.send({ type: 'cancelAgentRun', runId });
           }}
         />
         <MapPlaybackControls store={store} />
@@ -269,6 +262,14 @@ export function App({
         onInterrupt={(changeSetId) => {
           messenger.send({ type: 'interruptChange', changeSetId });
         }}
+        onScopeExpansionDecision={(changeSetId, requestId, decision) => {
+          messenger.send({
+            type: 'decideScopeExpansion',
+            changeSetId,
+            requestId,
+            decision,
+          });
+        }}
       />
       {state.agentPaneView.mode === 'docked' ? (
         <ResizableAgentPane
@@ -301,8 +302,6 @@ export function App({
   function agentPanel(): React.JSX.Element {
     return (
       <AgentConversationPanel
-        conversation={state.agentConversation}
-        run={state.agentRun}
         agent={configuredAgent?.agent}
         selectedNode={
           state.selectedId === undefined
@@ -316,6 +315,13 @@ export function App({
         activeChanges={[...state.map.activeChanges.values()]}
         completedChanges={[...state.map.completedChanges.values()]}
         hasGit={state.map.capabilities?.hasGit ?? false}
+        onOpenAgent={() => {
+          if (configuredAgent === undefined) {
+            messenger.send({ type: 'refreshAgentStatus' });
+            return;
+          }
+          messenger.send({ type: 'openAgentTerminal', agent: configuredAgent.agent });
+        }}
         onSend={(message, mode) => {
           if (configuredAgent === undefined) {
             messenger.send({ type: 'refreshAgentStatus' });
@@ -329,30 +335,12 @@ export function App({
             ...(state.selectedId === undefined ? {} : { nodeIds: [state.selectedId] }),
           });
         }}
-        onAnswer={(runId, answer) => {
-          messenger.send({ type: 'answerAgentQuestion', runId, answer });
-        }}
-        onScopeExpansionDecision={(runId, requestId, changeSetId, decision) => {
-          messenger.send({
-            type: 'decideScopeExpansion',
-            runId,
-            requestId,
-            changeSetId,
-            decision,
-          });
-        }}
-        onCancel={(runId) => {
-          messenger.send({ type: 'cancelAgentRun', runId });
-        }}
         paneMode={state.agentPaneView.mode}
         onTogglePaneMode={() => {
           savePaneView({
             ...state.agentPaneView,
             mode: state.agentPaneView.mode === 'docked' ? 'floating' : 'docked',
           });
-        }}
-        onExport={() => {
-          messenger.send({ type: 'exportAgentConversation' });
         }}
         onApproveProposal={(proposalId, approvedScope) => {
           messenger.send({

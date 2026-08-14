@@ -1,5 +1,4 @@
 (() => {
-  /* global setTimeout */
   const timestamp = '2026-08-11T00:00:00.000Z';
   const provenance = {
     kind: 'agent_declared',
@@ -254,14 +253,9 @@
   window.__godViewSnapshot = snapshot;
   window.acquireVsCodeApi = () => ({
     // Test harness intentionally routes every supported command in one host adapter.
-    // eslint-disable-next-line complexity
     postMessage(command) {
       window.__godViewCommands.push(command);
-      const continuationHandled = window.__godViewContinuationHarness.handle(
-        command,
-        snapshot,
-        timestamp,
-      );
+      window.__godViewContinuationHarness.handle(command, snapshot, timestamp);
       if (command.type === 'ready' || command.type === 'requestSnapshot') {
         queueMicrotask(() => {
           window.dispatchEvent(new MessageEvent('message', { data: snapshot }));
@@ -282,7 +276,7 @@
                     version: '2.1.228',
                     configuration: 'missing',
                     workspaceRoot: '/repo',
-                    detail: '尚未配置当前工作区的 MCP god-view。',
+                    detail: '尚未完整配置当前工作区的 MCP 与上下文 hook。',
                   },
                   {
                     agent: 'codex',
@@ -291,7 +285,7 @@
                     version: 'codex-cli 0.147.0',
                     configuration: 'current',
                     workspaceRoot: '/repo',
-                    detail: 'MCP god-view 已由官方 get 命令复验。',
+                    detail: '原生会话、MCP 与每轮上下文 hook 已配置并复验。',
                   },
                 ],
               },
@@ -313,138 +307,8 @@
                   version: agent === 'codex' ? 'codex-cli 0.147.0' : '2.1.228',
                   configuration: 'current',
                   workspaceRoot: '/repo',
-                  detail: 'MCP god-view 已由官方 get 命令复验。',
+                  detail: '原生会话、MCP 与每轮上下文 hook 已配置并复验。',
                 })),
-              },
-            }),
-          );
-        });
-      }
-      if (
-        command.type === 'startInitialization' ||
-        command.type === 'startReinitialization' ||
-        command.type === 'startMapCompletion'
-      ) {
-        const purpose =
-          command.type === 'startReinitialization'
-            ? 'reinitialization'
-            : command.type === 'startMapCompletion'
-              ? command.target === 'groups'
-                ? 'group_completion'
-                : 'file_completion'
-              : 'initialization';
-        const run = {
-          runId: 'run-e2e',
-          agent: command.agent,
-          state: 'running',
-          output: ['Agent 会话已建立。', '正在分析项目入口与数据流…'],
-          detail: 'Agent 已启动，正在分析项目…',
-          restartRequired: false,
-          purpose,
-        };
-        queueMicrotask(() => {
-          window.dispatchEvent(new MessageEvent('message', { data: { type: 'agent/run', run } }));
-          setTimeout(() => {
-            window.dispatchEvent(
-              new MessageEvent('message', {
-                data: {
-                  type: 'agent/run',
-                  run: {
-                    ...run,
-                    state: 'awaiting_input',
-                    detail: 'Agent 正在等待你的选择。',
-                    question: {
-                      question: '如何归类仓库中的工程文档？',
-                      options: [
-                        { id: 'group', label: '工程知识分组', description: '集中展示文档与规则。' },
-                        {
-                          id: 'unclassified',
-                          label: '保留未分类',
-                          description: '暂不声明语义归属。',
-                        },
-                      ],
-                    },
-                  },
-                },
-              }),
-            );
-          }, 20);
-        });
-      }
-      if (command.type === 'sendAgentMessage' && !continuationHandled) {
-        const user = {
-          id: 'chat-user-e2e',
-          role: 'user',
-          body: command.message,
-          createdAt: timestamp,
-        };
-        queueMicrotask(() => {
-          window.dispatchEvent(
-            new MessageEvent('message', {
-              data: {
-                type: 'agent/conversation',
-                conversation: {
-                  threadId: 'thread-e2e',
-                  agent: command.agent,
-                  state: 'running',
-                  activeRunId: 'chat-run-e2e',
-                  messages: [
-                    user,
-                    {
-                      id: 'chat-agent-live-e2e',
-                      role: 'agent',
-                      body: '正在读取最新项目地图…',
-                      createdAt: timestamp,
-                      runId: 'chat-run-e2e',
-                    },
-                  ],
-                },
-              },
-            }),
-          );
-          setTimeout(() => {
-            window.dispatchEvent(
-              new MessageEvent('message', {
-                data: {
-                  type: 'agent/conversation',
-                  conversation: {
-                    threadId: 'thread-e2e',
-                    agent: command.agent,
-                    state: 'idle',
-                    messages: [
-                      user,
-                      {
-                        id: 'chat-agent-e2e',
-                        role: 'agent',
-                        body: '订单从 API 入口进入 Orders，再调用 Payments 完成授权。',
-                        createdAt: timestamp,
-                        runId: 'chat-run-e2e',
-                      },
-                    ],
-                  },
-                },
-              }),
-            );
-          }, 250);
-        });
-      }
-      if (command.type === 'exportAgentConversation') {
-        window.__godViewConversationExported = true;
-      }
-      if (command.type === 'answerAgentQuestion' && !continuationHandled) {
-        queueMicrotask(() => {
-          window.dispatchEvent(
-            new MessageEvent('message', {
-              data: {
-                type: 'agent/run',
-                run: {
-                  runId: command.runId,
-                  agent: 'codex',
-                  state: 'completed',
-                  output: ['用户选择：group', '9 个模块与 8 条关系已写入并复验。'],
-                  detail: '首次建图任务已结束。',
-                  restartRequired: true,
-                },
               },
             }),
           );

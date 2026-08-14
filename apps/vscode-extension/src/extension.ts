@@ -14,6 +14,7 @@ import { commandIds, configKeys, configSection, outputChannelName, viewIds } fro
 import { systemClock } from './clock.js';
 import { AsyncLock } from './async-lock.js';
 import { inspectAgentMcpConfiguration, type ConfigurableAgent } from './agent-mcp-configuration.js';
+import { inspectAgentHookConfiguration } from './agent-hook-configuration.js';
 import {
   acceptAgentDataBoundary,
   configureAgent,
@@ -22,9 +23,7 @@ import {
   showAgentAdapters,
 } from './agent-controller.js';
 import { buildAgentTask } from './agent-task.js';
-import { AgentInitializationRunner } from './agent-initialization-runner.js';
-import { ProjectMemory } from './project-memory.js';
-import type { AgentRunPurpose } from './agent-initialization-runner.js';
+import { NativeAgentHost, type NativeAgentPurpose } from './native-agent-host.js';
 import { mapExportFileName, serializeMapExport } from './map-export.js';
 import { createLogger, type Logger } from './logger.js';
 import { installRuntimeAssets, type RuntimeAssetState } from './runtime-assets.js';
@@ -61,8 +60,7 @@ interface Session {
   readonly identity: WorkspaceIdentity;
   readonly service: MapService;
   readonly tree: StructureTreeProvider;
-  readonly agentRunner: AgentInitializationRunner;
-  readonly projectMemory: ProjectMemory;
+  readonly agentHost: NativeAgentHost;
   readonly disposables: Disposable[];
 }
 
@@ -189,7 +187,7 @@ async function restoreMapPanel(
     context,
     current.service,
     logger.child('webview'),
-    current.agentRunner,
+    current.agentHost,
     () => publishAgentStatus(context, logger, current, runtimeAssets),
   );
   logger.info('webview.restored', { workspaceId: current.identity.id });
@@ -238,7 +236,7 @@ async function ensureSessionUnlocked(
 
   const tree = new StructureTreeProvider(service);
   const taskModeByPurpose: Record<
-    AgentRunPurpose,
+    NativeAgentPurpose,
     'automatic' | 'reinitialize' | 'complete_groups' | 'complete_files'
   > = {
     initialization: 'automatic',
@@ -249,79 +247,33 @@ async function ensureSessionUnlocked(
     annotation_answer: 'automatic',
     approved_change: 'automatic',
   };
-  const projectMemory = new ProjectMemory(target.root.fsPath);
-  const restoredConversation = await projectMemory.load();
-  const withProjectMemory = (task: string): string =>
-    projectMemory.context === ''
-      ? task
-      : [
-          task,
-          '',
-          '以下是 God View 在上次会话结束时保存的项目记忆。它只用于恢复上下文；代码与最新 get_map 仍是权威真相：',
-          projectMemory.context,
-        ].join('\n');
-  const agentRunner = new AgentInitializationRunner({
+  const agentHost = new NativeAgentHost({
     workspaceRoot: target.root.fsPath,
     now: systemClock,
-    task: (purpose) =>
-      withProjectMemory(buildCurrentAgentTask(service, taskModeByPurpose[purpose])),
-    ...(restoredConversation === undefined ? {} : { initialConversation: restoredConversation }),
+    task: (purpose) => buildCurrentAgentTask(service, taskModeByPurpose[purpose]),
     projectChatTask: (message) =>
-      withProjectMemory(
-        [
-          '你正在 God View 插件内部与用户持续对话。',
-          `当前权威地图：r${String(service.snapshot.revision)}，${String(service.snapshot.nodes.size)} 个节点，${String(service.snapshot.edges.size)} 条关系。`,
-          '先调用 get_map 获取最新地图，再用自然语言直接回答用户。可以只读检查仓库以给出有证据的答案。',
-          '本轮是只读对话：不得修改文件，不得 begin_change，不得申请或假定写入授权。',
-          '如果用户表达修改意图，请说明影响与建议范围，并提示他在对话框勾选“作为修改请求”后发送；不要自行编辑。',
-          '不要输出机器 JSON，也不要让用户复制到外部；答案会直接实时显示在插件对话里。',
-          '',
-          `用户：${message}`,
-        ].join('\n'),
-      ),
+      [
+        `当前 God View 地图：r${String(service.snapshot.revision)}，${String(service.snapshot.nodes.size)} 个节点，${String(service.snapshot.edges.size)} 条关系。`,
+        '先调用 get_map 获取最新画布上下文，再在当前原生会话中直接回答用户。',
+        '是否修改文件以及所需权限由当前 Codex/Claude 原生权限机制决定；God View 不替代该审批。',
+        '',
+        `用户：${message}`,
+      ].join('\n'),
     annotationTask: (annotationId) => {
       const task = formatAnnotationTask(annotationId, service.snapshot);
-      return task === undefined ? undefined : withProjectMemory(task);
-    },
-    annotationCompletion: (annotationId) => {
-      const annotation = service.snapshot.annotations.get(annotationId);
-      const answered = annotation?.messages.some((message) => message.author === 'agent') === true;
-      if (!answered) return undefined;
-      return annotation.type === 'change' &&
-        [...service.snapshot.changeProposals.values()].some(
-          (proposal) => proposal.annotationId === annotationId,
-        )
-        ? 'proposal_ready'
-        : 'answered';
+      return task;
     },
     approvedChangeTask: (proposalId) => {
       const proposal = service.snapshot.changeProposals.get(proposalId);
       return proposal?.status === 'approved' ? formatApprovedChangeTask(proposal) : undefined;
     },
-    approvedChangeCompleted: (proposalId) =>
-      [...service.snapshot.completedChanges.values()].some(
-        (change) =>
-          change.proposalId === proposalId &&
-          change.status === 'pending_review' &&
-          ((change.touchedNodeIds?.length ?? 0) > 0 || (change.touchedEdgeIds?.length ?? 0) > 0),
-      ),
     authorize: async (agent) =>
       (await acceptAgentDataBoundary(context, logger, target.id)) &&
       (await isAgentReady(agent, target, runtimeAssets)),
-    onUpdate: (run) => {
-      MapPanel.postToCurrent({ type: 'agent/run', run });
-    },
-    onConversationUpdate: (conversation) => {
-      projectMemory.persist(conversation, service.snapshot);
-      MapPanel.postToCurrent({ type: 'agent/conversation', conversation });
-    },
   });
   const disposables: Disposable[] = [
     service,
-    new Disposable(() => {
-      agentRunner.dispose();
-      void projectMemory.flush();
-    }),
+    agentHost,
     window.createTreeView(viewIds.structure, { treeDataProvider: tree, showCollapseAll: true }),
     service.onDidUpdate(() => {
       tree.refresh();
@@ -333,7 +285,7 @@ async function ensureSessionUnlocked(
     }),
   ];
 
-  session = { identity: target, service, tree, agentRunner, projectMemory, disposables };
+  session = { identity: target, service, tree, agentHost, disposables };
   return session;
 }
 
@@ -483,7 +435,7 @@ async function openProjectMap(
     context,
     current.service,
     logger.child('webview'),
-    current.agentRunner,
+    current.agentHost,
     () => publishAgentStatus(context, logger, current, runtimeAssets),
   );
   if (nodeId !== undefined) {
@@ -513,7 +465,7 @@ async function revealActiveFile(context: ExtensionContext, logger: Logger): Prom
     await window.showInformationMessage(`${relative} 还没有归属任何节点，可以让 Agent 补充。`);
     return;
   }
-  MapPanel.show(context, current.service, logger.child('webview'), current.agentRunner, () =>
+  MapPanel.show(context, current.service, logger.child('webview'), current.agentHost, () =>
     publishAgentStatus(context, logger, current, runtimeAssets),
   ).focusNode(first.id);
 }
@@ -571,13 +523,17 @@ async function isAgentReady(
   assets: RuntimeAssetState | undefined,
 ): Promise<boolean> {
   if (assets === undefined) return false;
-  const status = await inspectAgentMcpConfiguration({
+  const options = {
     agent,
     runtimeExecutable: process.execPath,
     gatewayEntry: assets.gatewayEntry,
     workspaceRoot: identity.root.fsPath,
-  });
-  return status.state === 'current';
+  } as const;
+  const [mcp, hook] = await Promise.all([
+    inspectAgentMcpConfiguration(options),
+    inspectAgentHookConfiguration(options),
+  ]);
+  return mcp.state === 'current' && hook === 'current';
 }
 
 function readExtensionVersion(context: ExtensionContext): string {

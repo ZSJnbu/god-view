@@ -6,6 +6,7 @@ import { GatewaySession } from '../gateway-session.js';
 import { runStdioServer } from '../mcp-server.js';
 import { resolveWorkspaceRuntime } from '../runtime-layout.js';
 import { readSessionDescriptor } from '../session-descriptor.js';
+import { buildHookOutput } from '../hook-context.js';
 import {
   adapterNames,
   agentAdapterProfiles,
@@ -20,6 +21,7 @@ import {
  * - `serve`：作为 MCP stdio server 供支持 MCP 的 Agent 调用；
  * - `emit`：兜底路径，把一个 JSON/JSONL 事件文件投递到收件箱，
  *   供无法被插件主动调用的工作流使用（PRD §7.1.2）。
+ * - `hook`：作为 Codex/Claude hook，按当前权威地图为每轮提示注入轻量上下文。
  */
 
 const usage = `用法：
@@ -27,6 +29,8 @@ const usage = `用法：
                                                以 MCP stdio server 运行
   god-view emit <file.json|file.jsonl> [--workspace <dir>]
                                                投递事件文件到 God View 收件箱
+  god-view hook [--workspace <dir>]
+                                               从 stdin 接收 hook 事件并输出上下文
 
 说明：
   --workspace 默认为当前目录。God View 扩展必须已在该工作区打开过一次，
@@ -110,6 +114,35 @@ async function runEmit(argv: readonly string[], workspaceRoot: string): Promise<
   }
 }
 
+async function runHook(workspaceRoot: string): Promise<void> {
+  const layout = resolveWorkspaceRuntime(workspaceRoot);
+  const [inputText, mapText] = await Promise.all([
+    readStandardInput(),
+    readFile(layout.mapFile, 'utf8').catch(() => '{}'),
+  ]);
+  let input: unknown = {};
+  let mapDocument: unknown = {};
+  try {
+    input = JSON.parse(inputText) as unknown;
+  } catch {
+    // 非法 hook 输入不能污染 Agent 对话；返回空对象即安全跳过。
+  }
+  try {
+    mapDocument = JSON.parse(mapText) as unknown;
+  } catch {
+    // 地图正在原子替换或尚未生成时仍允许 Agent 正常继续。
+  }
+  process.stdout.write(`${JSON.stringify(buildHookOutput(input, mapDocument))}\n`);
+}
+
+async function readStandardInput(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const command = argv[0];
@@ -126,6 +159,9 @@ async function main(): Promise<void> {
       return;
     case 'emit':
       await runEmit(argv, workspaceRoot);
+      return;
+    case 'hook':
+      await runHook(workspaceRoot);
       return;
     default:
       process.stdout.write(`${usage}\n`);

@@ -148,9 +148,6 @@ function NodeDetails({
   readonly onCopyApprovedChangeTask: DetailsPanelProps['onCopyApprovedChangeTask'];
 }): React.JSX.Element {
   const badges = badgesFor(node);
-  const agentRun = store.getState().agentRun;
-  const annotationRun = annotationRunState(agentRun);
-  const editRun = approvedChangeRunState(agentRun);
   return (
     <section className="details__section">
       <h2>{node.label}</h2>
@@ -202,44 +199,14 @@ function NodeDetails({
         onOpenSource={onOpenSource}
         onResolve={onResolveAnnotation}
         onStartAnswer={onStartAnnotationAnswer}
-        answeringAnnotationId={annotationRun.activeId}
-        failedAnnotationId={annotationRun.failedId}
         onCopyTask={onCopyAnnotationTask}
         onApproveProposal={onApproveProposal}
         onStartApprovedChange={onStartApprovedChange}
         onRejectProposal={onRejectProposal}
         onCopyApprovedChangeTask={onCopyApprovedChangeTask}
-        editingProposalId={editRun.activeId}
-        failedProposalId={editRun.failedId}
       />
     </section>
   );
-}
-
-function annotationRunState(run: ReturnType<AppStore['getState']>['agentRun']): {
-  activeId: Identifier | undefined;
-  failedId: Identifier | undefined;
-} {
-  if (run?.purpose !== 'annotation_answer') return { activeId: undefined, failedId: undefined };
-  return {
-    activeId: ['starting', 'running', 'awaiting_input'].includes(run.state)
-      ? run.annotationId
-      : undefined,
-    failedId: run.state === 'failed' ? run.annotationId : undefined,
-  };
-}
-
-function approvedChangeRunState(run: ReturnType<AppStore['getState']>['agentRun']): {
-  activeId: Identifier | undefined;
-  failedId: Identifier | undefined;
-} {
-  if (run?.purpose !== 'approved_change') return { activeId: undefined, failedId: undefined };
-  return {
-    activeId: ['starting', 'running', 'awaiting_input'].includes(run.state)
-      ? run.proposalId
-      : undefined,
-    failedId: run.state === 'failed' ? run.proposalId : undefined,
-  };
 }
 
 function NodeEvidence({
@@ -338,7 +305,7 @@ function AnnotationComposer({
     onCreate(type, trimmed, [node.id], [...excluded]);
     setBody('');
     setValidationMessage(undefined);
-    setSubmittedMessage('标注已创建；已配置 Agent 时会在下方启动内部解释子线程。');
+    setSubmittedMessage('标注已创建；已配置 Agent 时会发送到官方终端继续处理。');
   };
 
   return (

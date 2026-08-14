@@ -77,7 +77,7 @@ function buildInitializationTask(context: AgentTaskContext): string {
     '请使用 God View MCP 工具为当前工作区建立第一版项目地图。',
     '',
     '连接前置检查：本会话必须已经列出 get_map、begin_change、upsert_node、upsert_edge、complete_change。',
-    '如果任一工具不存在，立即停止，不要改文件、不要扫描仓库、不要直接写 .godview；请用户先在 VS Code 执行「God View: Configure Agent MCP」，退出当前 Agent 会话并在本目录重开。',
+    '如果任一工具不存在，立即停止，不要改文件、不要扫描仓库、不要直接写 .godview；请用户先在 VS Code 执行「God View: Configure Native Agent」，退出当前 Agent 会话并在本目录重开。',
     '工具齐全后先调用 get_map，确认 workspace、branch 和当前 revision；不要修改用户代码。',
     '若 get_map 返回 activeChanges，说明已有未结束任务：不得重复 begin_change 或猜 ID；先向用户展示 changeSetId、开始时间和职责，确认后才能用该 ID complete_change(interrupted)，再重新读取地图并继续。',
     `插件清单中共有 ${String(total)} 个第一方文件，${String(coverage?.excluded ?? 0)} 个文件已按规则排除。`,
@@ -101,7 +101,7 @@ function buildMaintenanceTask(context: AgentTaskContext): string {
   return [
     '请使用 God View MCP 工具维护当前项目地图：',
     '',
-    '连接前置检查：若本会话没有 get_map 等 God View MCP 工具，立即停止；请用户先执行「God View: Configure Agent MCP」并重开 Agent 会话。',
+    '连接前置检查：若本会话没有 get_map 等 God View MCP 工具，立即停止；请用户先执行「God View: Configure Native Agent」并重开 Agent 会话。',
     `- 当前地图版本：r${String(context.revision)}`,
     `- 未分类的第一方文件：${String(coverage?.unclassified ?? 0)} 个`,
     `- 待处理漂移：${String(context.drift.length)} 项`,

@@ -5,7 +5,9 @@
   }
 
   function patchAnnotation(snapshot, annotation) {
-    snapshot.document.annotations = [annotation];
+    snapshot.document.annotations = snapshot.document.annotations
+      .filter((item) => item.id !== annotation.id)
+      .concat(annotation);
     snapshot.document.revision += 1;
     dispatch({
       type: 'map/patch',
@@ -47,25 +49,6 @@
     });
   }
 
-  function emitRun(command, annotationId, state, output, runId) {
-    dispatch({
-      type: 'agent/run',
-      run: {
-        runId,
-        agent: command.autoAnswerAgent ?? command.agent,
-        state,
-        output,
-        detail:
-          state === 'completed'
-            ? '标注解释已完成并通过最终复核；地图已刷新。'
-            : 'Agent 已启动，正在分析标注问题…',
-        restartRequired: false,
-        purpose: 'annotation_answer',
-        annotationId,
-      },
-    });
-  }
-
   window.__godViewAnnotationHarness = {
     handle(command, snapshot, timestamp) {
       if (command.type === 'createAnnotation') {
@@ -80,78 +63,12 @@
           ],
           createdAt: timestamp,
         });
-        if (command.autoAnswerAgent !== undefined) {
-          setTimeout(() => {
-            emitRun(
-              command,
-              id,
-              'running',
-              ['Agent 会话已建立。', '正在读取地图与允许的代码位置…'],
-              'annotation-run-e2e',
-            );
-            setTimeout(() => {
-              emitRun(
-                command,
-                id,
-                'running',
-                [
-                  'Agent 会话已建立。',
-                  '正在读取地图与允许的代码位置…',
-                  '已读取权威地图：r3 · 3 个节点 · 2 条关系 · 0 个未分类文件。',
-                  'God View 写入已接受：地图推进至 r4。',
-                ],
-                'annotation-run-e2e',
-              );
-              setTimeout(() => {
-                emitRun(
-                  command,
-                  id,
-                  'running',
-                  [
-                    'Agent 会话已建立。',
-                    '正在读取地图与允许的代码位置…',
-                    '已读取权威地图：r3 · 3 个节点 · 2 条关系 · 0 个未分类文件。',
-                    'God View 写入已接受：地图推进至 r4。',
-                    'Agent 已完成写入，正在等待权威地图同步…',
-                  ],
-                  'annotation-run-e2e',
-                );
-                setTimeout(() => {
-                  answer(snapshot, id, timestamp);
-                  emitRun(
-                    command,
-                    id,
-                    'completed',
-                    [
-                      'Agent 会话已建立。',
-                      '正在读取地图与允许的代码位置…',
-                      '已读取权威地图：r3 · 3 个节点 · 2 条关系 · 0 个未分类文件。',
-                      'God View 写入已接受：地图推进至 r4。',
-                      'answer_annotation 已接受，标注答案已回写。',
-                    ],
-                    'annotation-run-e2e',
-                  );
-                }, 80);
-              }, 40);
-            }, 20);
-          }, 5);
-        }
+        if (command.autoAnswerAgent !== undefined)
+          setTimeout(() => answer(snapshot, id, timestamp), 40);
         return true;
       }
-      if (command.type === 'startAnnotationAnswer') {
-        queueMicrotask(() => {
-          emitRun(
-            command,
-            command.annotationId,
-            'running',
-            ['正在重新回答标注…'],
-            'annotation-run-retry-e2e',
-          );
-        });
-        return true;
-      }
-      if (command.type === 'copyAnnotationTask') {
-        answer(snapshot, command.annotationId, timestamp);
+      if (command.type === 'startAnnotationAnswer' || command.type === 'copyAnnotationTask') {
+        queueMicrotask(() => answer(snapshot, command.annotationId, timestamp));
         return true;
       }
       if (command.type === 'resolveAnnotation') {

@@ -17,9 +17,9 @@
 ## Manual release evidence
 
 - Install the VSIX into a clean VS Code profile and open a Git and a no-Git workspace.
-- Run **Show Agent Adapters** and **Configure Agent MCP** for both Codex and Claude Code; require the
-  built-in `mcp get god-view` verification, exit each old Agent session, reopen it in the workspace,
-  and call `get_map` before giving it an initialization task.
+- Run **Show Agent Adapters** and **Configure Native Agent** for both Codex and Claude Code; require
+  MCP and UserPromptSubmit hook verification, exit each old Agent session, reopen it in the workspace,
+  accept native hook trust when prompted, and call `get_map` before giving it an initialization task.
 - Exercise **Copy Agent Setup** as the manual fallback without claiming that copying alone connects
   the current Agent session.
 - Complete one clean approved ChangeSet and one deliberate out-of-scope write; verify no automatic

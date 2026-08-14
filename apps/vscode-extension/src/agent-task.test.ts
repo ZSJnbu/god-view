@@ -20,7 +20,7 @@ describe('buildAgentTask', () => {
     const task = buildAgentTask({ revision: 0, nodeCount: 0, coverage, drift: [] });
     expect(task).toContain('建立第一版项目地图');
     expect(task).toContain('不要修改用户代码');
-    expect(task).toContain('God View: Configure Agent MCP');
+    expect(task).toContain('God View: Configure Native Agent');
     expect(task).toContain('不要扫描仓库');
     expect(task).toContain('共有 2 个第一方文件');
     expect(task).toContain('所有第一方文件必须归入模块/分组');

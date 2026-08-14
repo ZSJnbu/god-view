@@ -42,10 +42,7 @@ export function Toolbar({
   const missingLevels = levels.filter(
     ({ id }) => id !== 'modules' && graphSignature(store, id) === moduleSignature,
   );
-  const agentTaskBusy =
-    state.map.activeChanges.size > 0 ||
-    (state.agentRun !== undefined &&
-      ['starting', 'running', 'awaiting_input'].includes(state.agentRun.state));
+  const agentTaskBusy = state.map.activeChanges.size > 0;
 
   return (
     <header className="toolbar">

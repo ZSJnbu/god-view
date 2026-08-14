@@ -17,6 +17,10 @@ describe('buildAgentSetup', () => {
     expect(setup).toContain('"ELECTRON_RUN_AS_NODE": "1"');
     expect(setup).toContain("'/Users/me/Work/project one'");
     expect(setup).toContain('"generic-mcp"');
+    expect(setup).toContain('.codex/hooks.json');
+    expect(setup).toContain('.claude/settings.local.json');
+    expect(setup).toContain('UserPromptSubmit');
+    expect(setup).toContain("hook --workspace '/Users/me/Work/project one'");
     expect(setup).toContain('monitored');
   });
 

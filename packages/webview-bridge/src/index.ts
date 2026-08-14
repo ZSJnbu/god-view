@@ -5,13 +5,8 @@
  */
 export type {
   AgentConfigurationView,
-  AgentConversationMessage,
-  AgentConversationView,
   AgentFloatingBounds,
   AgentPaneView,
-  AgentQuestion,
-  AgentQuestionOption,
-  AgentRunView,
   ConfigurableAgent,
   ExtensionEvent,
   ExtensionEventType,

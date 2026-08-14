@@ -68,7 +68,7 @@
       },
       {
         "command": "godView.configureAgent",
-        "title": "God View: Configure Agent MCP",
+        "title": "God View: Configure Native Agent",
         "category": "God View"
       },
       {

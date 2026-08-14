@@ -22,8 +22,6 @@ export interface AnnotationThreadsProps {
   readonly onOpenSource: (path: string, startLine?: number) => void;
   readonly onResolve: (annotationId: Identifier) => void;
   readonly onStartAnswer: (annotationId: Identifier) => void;
-  readonly answeringAnnotationId: Identifier | undefined;
-  readonly failedAnnotationId: Identifier | undefined;
   readonly onCopyTask: (annotationId: Identifier) => void;
   readonly onApproveProposal: (
     proposalId: Identifier,
@@ -32,8 +30,6 @@ export interface AnnotationThreadsProps {
   readonly onStartApprovedChange: (proposalId: Identifier) => void;
   readonly onRejectProposal: (proposalId: Identifier) => void;
   readonly onCopyApprovedChangeTask: (proposalId: Identifier) => void;
-  readonly editingProposalId: Identifier | undefined;
-  readonly failedProposalId: Identifier | undefined;
 }
 
 /** 标注、Agent 回答和受控修改方案组成的原位对话线程。 */
@@ -60,15 +56,11 @@ function AnnotationThreadCard({
   onOpenSource,
   onResolve,
   onStartAnswer,
-  answeringAnnotationId,
-  failedAnnotationId,
   onCopyTask,
   onApproveProposal,
   onStartApprovedChange,
   onRejectProposal,
   onCopyApprovedChangeTask,
-  editingProposalId,
-  failedProposalId,
 }: Omit<AnnotationThreadsProps, 'annotations'> & {
   readonly annotation: AnnotationThread;
 }): React.JSX.Element {
@@ -121,25 +113,21 @@ function AnnotationThreadCard({
             <button
               type="button"
               className="chip chip--active"
-              disabled={answeringAnnotationId !== undefined}
               onClick={() => {
                 onStartAnswer(annotation.id);
               }}
             >
-              {answeringAnnotationId === annotation.id ? 'AI 正在回答…' : '让 AI 回答'}
+              发送到原生 Agent 回答
             </button>
-            {failedAnnotationId === annotation.id && (
-              <button
-                type="button"
-                className="chip"
-                title="内部 AI 未能完成；复制任务到外部 Agent 继续"
-                onClick={() => {
-                  onCopyTask(annotation.id);
-                }}
-              >
-                复制手动任务（兜底）
-              </button>
-            )}
+            <button
+              type="button"
+              className="chip"
+              onClick={() => {
+                onCopyTask(annotation.id);
+              }}
+            >
+              复制手动任务
+            </button>
           </>
         )}
         {!['resolved', 'cancelled'].includes(annotation.status) && (
@@ -172,8 +160,6 @@ function AnnotationThreadCard({
             onStart={onStartApprovedChange}
             onReject={onRejectProposal}
             onCopyTask={onCopyApprovedChangeTask}
-            editing={editingProposalId === proposal.id}
-            failed={failedProposalId === proposal.id}
           />
         ))}
     </article>
@@ -201,8 +187,6 @@ export function ProposalReview({
   onStart,
   onReject,
   onCopyTask,
-  editing,
-  failed,
 }: {
   readonly proposal: ChangeProposal;
   readonly activeChanges: readonly ActiveChange[];
@@ -212,8 +196,6 @@ export function ProposalReview({
   readonly onStart: AnnotationThreadsProps['onStartApprovedChange'];
   readonly onReject: AnnotationThreadsProps['onRejectProposal'];
   readonly onCopyTask: AnnotationThreadsProps['onCopyApprovedChangeTask'];
-  readonly editing: boolean;
-  readonly failed: boolean;
 }): React.JSX.Element {
   const [scope, setScope] = useState<ReadonlySet<WorkspacePath>>(
     () => new Set(proposal.approval?.approvedScope ?? proposal.plannedFiles),
@@ -333,24 +315,21 @@ export function ProposalReview({
             <button
               type="button"
               className="chip chip--active"
-              disabled={editing}
               onClick={() => {
                 onStart(proposal.id);
               }}
             >
-              {editing ? 'Agent 正在编辑并同步视图…' : '启动内部编辑 Agent'}
+              发送到原生 Agent 继续
             </button>
-            {failed && (
-              <button
-                type="button"
-                className="chip"
-                onClick={() => {
-                  onCopyTask(proposal.id);
-                }}
-              >
-                复制已批准任务（兜底）
-              </button>
-            )}
+            <button
+              type="button"
+              className="chip"
+              onClick={() => {
+                onCopyTask(proposal.id);
+              }}
+            >
+              复制已批准任务
+            </button>
           </>
         )}
         {proposal.status === 'approved' && retryable && (
@@ -358,16 +337,12 @@ export function ProposalReview({
             <button
               type="button"
               className="chip chip--active"
-              disabled={editing || !hasGit || scope.size === 0}
+              disabled={!hasGit || scope.size === 0}
               onClick={() => {
                 onApprove(proposal.id, [...scope]);
               }}
             >
-              {editing
-                ? 'Agent 正在编辑并同步视图…'
-                : execution.kind === 'retryable'
-                  ? '重新批准并重试'
-                  : '重新批准并开始'}
+              {execution.kind === 'retryable' ? '重新批准并重试' : '重新批准并开始'}
             </button>
             <button
               type="button"

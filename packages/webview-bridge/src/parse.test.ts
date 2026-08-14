@@ -65,8 +65,7 @@ describe('Webview 命令解析', () => {
     expect(parseWebviewCommand({ type: 'saveAgentPaneHeight', height: Number.NaN }).ok).toBe(false);
   });
 
-  it('接受对话导出与安全的浮窗偏好', () => {
-    expect(parseWebviewCommand({ type: 'exportAgentConversation' }).ok).toBe(true);
+  it('接受安全的浮窗偏好', () => {
     expect(
       parseWebviewCommand({
         type: 'saveAgentPaneView',
@@ -195,14 +194,10 @@ describe('Webview 命令解析', () => {
     expect(
       parseWebviewCommand({ type: 'startMapCompletion', agent: 'codex', target: 'unknown' }).ok,
     ).toBe(false);
-    expect(
-      parseWebviewCommand({ type: 'answerAgentQuestion', runId: 'run-1', answer: 'recommended' })
-        .ok,
-    ).toBe(true);
+    expect(parseWebviewCommand({ type: 'openAgentTerminal', agent: 'codex' }).ok).toBe(true);
     expect(
       parseWebviewCommand({
         type: 'decideScopeExpansion',
-        runId: 'run-1',
         requestId: 'scope-1',
         changeSetId: 'change-1',
         decision: 'approved',
@@ -214,18 +209,14 @@ describe('Webview 命令解析', () => {
     expect(
       parseWebviewCommand({
         type: 'decideScopeExpansion',
-        runId: 'run-1',
         requestId: 'scope-1',
         changeSetId: 'change-1',
         decision: 'later',
       }).ok,
     ).toBe(false);
-    expect(parseWebviewCommand({ type: 'cancelAgentRun', runId: 'run-1' }).ok).toBe(true);
     expect(parseWebviewCommand({ type: 'startInitialization', agent: 'other' }).ok).toBe(false);
     expect(parseWebviewCommand({ type: 'startReinitialization', agent: 'other' }).ok).toBe(false);
-    expect(parseWebviewCommand({ type: 'answerAgentQuestion', runId: '', answer: 'x' }).ok).toBe(
-      false,
-    );
+    expect(parseWebviewCommand({ type: 'openAgentTerminal', agent: 'other' }).ok).toBe(false);
   });
 
   it('接受常驻项目对话，并区分只读聊天与受控修改请求', () => {

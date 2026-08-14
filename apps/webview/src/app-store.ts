@@ -1,9 +1,7 @@
 import type { GuidedStory, GuidedStoryStep, Identifier } from '@god-view/protocol';
 import type {
   AgentConfigurationView,
-  AgentConversationView,
   AgentPaneView,
-  AgentRunView,
   ConfigurableAgent,
   ExtensionEvent,
   SyncState,
@@ -29,8 +27,6 @@ export interface AppState {
   readonly story: StoryPlayback;
   readonly agents: readonly AgentConfigurationView[];
   readonly selectedAgent: ConfigurableAgent | undefined;
-  readonly agentRun: AgentRunView | undefined;
-  readonly agentConversation: AgentConversationView | undefined;
   readonly agentPaneHeight: number;
   readonly agentPaneView: AgentPaneView;
   readonly changedNodeIds: readonly Identifier[];
@@ -69,8 +65,6 @@ const initialAppState: AppState = {
   story: { activeStoryId: undefined, stepIndex: 0, status: 'idle', speed: 1 },
   agents: [],
   selectedAgent: undefined,
-  agentRun: undefined,
-  agentConversation: undefined,
   agentPaneHeight: 200,
   agentPaneView: {
     mode: 'docked',
@@ -102,7 +96,6 @@ export class AppStore {
   #pendingPatches: MapPatchEvent[] = [];
   #sessionFrames: MapPatchEvent[] = [];
   #sessionBaseline: MapState | undefined;
-  #sessionRunId: string | undefined;
   #playbackTimer: ReturnType<typeof setTimeout> | undefined;
 
   getState = (): AppState => this.#state;
@@ -147,15 +140,6 @@ export class AppStore {
           agents: event.agents,
           selectedAgent: event.selectedAgent,
         });
-        return;
-      case 'agent/run':
-        if (isActiveRunState(event.run.state) && event.run.runId !== this.#sessionRunId) {
-          this.#beginPlaybackSession(event.run.runId);
-        }
-        this.#set({ agentRun: event.run });
-        return;
-      case 'agent/conversation':
-        this.#set({ agentConversation: event.conversation });
         return;
       case 'error':
         // 错误只记录，不清空地图：已经画出来的内容仍然是有效信息。
@@ -469,15 +453,6 @@ export class AppStore {
     });
   }
 
-  #beginPlaybackSession(runId: string): void {
-    this.#sessionRunId = runId;
-    this.#sessionBaseline = this.#state.map;
-    this.#sessionFrames = [];
-    this.#set({
-      playback: { ...this.#state.playback, sessionFrameCount: 0, replaying: false },
-    });
-  }
-
   #receiveMapPatch(event: MapPatchEvent): void {
     const nextAuthoritative = applyMapPatchEvent(this.#authoritativeMap, event);
     if (nextAuthoritative === this.#authoritativeMap) return;
@@ -573,10 +548,6 @@ function playbackState(revision: number): MapPlaybackState {
     replaying: false,
     speed: 1,
   };
-}
-
-function isActiveRunState(state: AgentRunView['state']): boolean {
-  return state === 'starting' || state === 'running' || state === 'awaiting_input';
 }
 
 export function activeStory(state: AppState): GuidedStory | undefined {

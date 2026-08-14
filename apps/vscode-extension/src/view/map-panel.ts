@@ -21,16 +21,12 @@ import {
 } from '@god-view/webview-bridge';
 import type { Logger } from '../logger.js';
 import type { MapService } from '../engine/map-service.js';
-import type { AgentInitializationRunner } from '../agent-initialization-runner.js';
+import type { NativeAgentHost } from '../native-agent-host.js';
 import { resolveWorkspacePath } from '../workspace/workspace-identity.js';
 import { routeMapUpdate } from './map-update-event.js';
 import { commandIds } from '../constants.js';
 import { formatAnnotationTask } from '../engine/annotation-context.js';
 import { agentPaneHeightKey, agentPaneViewKey, layoutStateKey } from '../workspace-data.js';
-import {
-  agentConversationFileName,
-  serializeAgentConversation,
-} from '../agent-conversation-export.js';
 import { purposeForCommand } from './agent-command-purpose.js';
 import {
   formatApprovedChangeTask,
@@ -59,7 +55,7 @@ export class MapPanel {
   readonly #context: ExtensionContext;
   readonly #service: MapService;
   readonly #logger: Logger;
-  readonly #agentRunner: AgentInitializationRunner;
+  readonly #agentHost: NativeAgentHost;
   readonly #refreshAgentStatus: () => Promise<void>;
   readonly #disposables: { dispose(): void }[] = [];
 
@@ -68,14 +64,14 @@ export class MapPanel {
     context: ExtensionContext,
     service: MapService,
     logger: Logger,
-    agentRunner: AgentInitializationRunner,
+    agentHost: NativeAgentHost,
     refreshAgentStatus: () => Promise<void>,
   ) {
     this.#panel = panel;
     this.#context = context;
     this.#service = service;
     this.#logger = logger;
-    this.#agentRunner = agentRunner;
+    this.#agentHost = agentHost;
     this.#refreshAgentStatus = refreshAgentStatus;
 
     this.#panel.webview.options = {
@@ -105,7 +101,7 @@ export class MapPanel {
     context: ExtensionContext,
     service: MapService,
     logger: Logger,
-    agentRunner: AgentInitializationRunner,
+    agentHost: NativeAgentHost,
     refreshAgentStatus: () => Promise<void>,
   ): MapPanel {
     const existing = MapPanel.#current;
@@ -118,7 +114,7 @@ export class MapPanel {
       retainContextWhenHidden: true,
       localResourceRoots: [Uri.joinPath(context.extensionUri, 'dist', 'webview')],
     });
-    const created = new MapPanel(panel, context, service, logger, agentRunner, refreshAgentStatus);
+    const created = new MapPanel(panel, context, service, logger, agentHost, refreshAgentStatus);
     MapPanel.#current = created;
     return created;
   }
@@ -129,14 +125,14 @@ export class MapPanel {
     context: ExtensionContext,
     service: MapService,
     logger: Logger,
-    agentRunner: AgentInitializationRunner,
+    agentHost: NativeAgentHost,
     refreshAgentStatus: () => Promise<void>,
   ): MapPanel {
     const existing = MapPanel.#current;
     if (existing !== undefined && existing.#panel !== panel) {
       existing.dispose();
     }
-    const restored = new MapPanel(panel, context, service, logger, agentRunner, refreshAgentStatus);
+    const restored = new MapPanel(panel, context, service, logger, agentHost, refreshAgentStatus);
     MapPanel.#current = restored;
     return restored;
   }
@@ -256,14 +252,10 @@ export class MapPanel {
     command: Extract<
       WebviewCommand,
       {
-        type: 'generateAgentTask' | 'copyAgentSetup' | 'configureAgent' | 'exportAgentConversation';
+        type: 'generateAgentTask' | 'copyAgentSetup' | 'configureAgent';
       }
     >,
   ): Promise<void> {
-    if (command.type === 'exportAgentConversation') {
-      await this.#exportAgentConversation();
-      return;
-    }
     if (command.type === 'configureAgent') {
       await commands.executeCommand(commandIds.configureAgent, command.agent);
       return;
@@ -275,45 +267,39 @@ export class MapPanel {
     );
   }
 
-  // eslint-disable-next-line complexity -- discriminated command router delegates stateful branches immediately.
   async #handleAgentCommand(
     command: Extract<
       WebviewCommand,
       {
         type:
           | 'refreshAgentStatus'
+          | 'openAgentTerminal'
           | 'startInitialization'
           | 'startReinitialization'
           | 'startMapCompletion'
           | 'startAnnotationAnswer'
           | 'startApprovedChange'
-          | 'answerAgentQuestion'
           | 'decideScopeExpansion'
-          | 'cancelAgentRun'
           | 'sendAgentMessage';
       }
     >,
   ): Promise<void> {
     if (command.type === 'refreshAgentStatus') return this.#refreshAgentStatus();
+    if (command.type === 'openAgentTerminal') {
+      const opened = await this.#agentHost.open(command.agent);
+      if (opened !== 'opened') {
+        this.#post({
+          type: 'error',
+          code: 'AGENT_NOT_READY',
+          message: 'Agent 的 MCP 或上下文 hook 尚未配置完成。',
+        });
+      }
+      return;
+    }
     if (command.type === 'sendAgentMessage') {
       return this.#handleConversationMessage(command);
     }
-    if (command.type === 'answerAgentQuestion') {
-      if (!this.#agentRunner.answer(command.runId, command.answer))
-        this.#post({ type: 'error', code: 'AGENT_ANSWER_REJECTED', message: '该问题已失效' });
-      return;
-    }
     if (command.type === 'decideScopeExpansion') {
-      const question = this.#agentRunner.lastRun?.question?.scopeExpansion;
-      if (
-        this.#agentRunner.lastRun?.runId !== command.runId ||
-        this.#agentRunner.lastRun.state !== 'awaiting_input' ||
-        question?.requestId !== command.requestId ||
-        question.changeSetId !== command.changeSetId
-      ) {
-        this.#post({ type: 'error', code: 'SCOPE_EXPANSION_STALE', message: '该扩围申请已失效' });
-        return;
-      }
       const decided = await this.#service.decideScopeExpansion(
         command.changeSetId,
         command.requestId,
@@ -330,20 +316,12 @@ export class MapPanel {
         });
         return;
       }
-      if (
-        !this.#agentRunner.answerScopeExpansion(command.runId, command.requestId, command.decision)
-      ) {
-        this.#post({
-          type: 'error',
-          code: 'AGENT_RESUME_REJECTED',
-          message: '审批已记录，但 Agent 会话无法恢复',
-        });
-      }
-      return;
-    }
-    if (command.type === 'cancelAgentRun') {
-      if (!this.#agentRunner.cancel(command.runId))
-        this.#post({ type: 'error', code: 'AGENT_CANCEL_REJECTED', message: '任务已结束' });
+      this.#agentHost.continueAfterScopeDecision(command.requestId, command.decision);
+      this.#post({
+        type: 'status',
+        state: 'idle',
+        detail: `scope-expansion-${command.decision}:${command.requestId}`,
+      });
       return;
     }
     if (command.type === 'startAnnotationAnswer') {
@@ -357,15 +335,12 @@ export class MapPanel {
     const purpose = purposeForCommand(command);
     if (purpose !== 'initialization' && !this.#canStartExistingMapTask()) return;
     if (purpose === 'reinitialization' && !(await this.#confirmReinitialization())) return;
-    const started = await this.#agentRunner.start(command.agent, purpose);
-    if (started === 'started') return;
+    const started = await this.#agentHost.start(command.agent, purpose);
+    if (started === 'opened') return;
     this.#post({
       type: 'error',
-      code: started === 'active' ? 'AGENT_RUN_ACTIVE' : 'AGENT_NOT_READY',
-      message:
-        started === 'active'
-          ? '已有地图任务正在运行'
-          : 'Agent 配置尚未通过当前工作区复验，请刷新或重新配置',
+      code: 'AGENT_NOT_READY',
+      message: 'Agent 的 MCP 或上下文 hook 尚未通过当前工作区复验，请刷新或重新配置',
     });
   }
 
@@ -387,7 +362,6 @@ export class MapPanel {
         });
         return;
       }
-      this.#agentRunner.recordUserMessage(command.agent, command.message);
       const id = await this.#service.createAnnotation({
         annotationType: 'change',
         body: command.message,
@@ -400,13 +374,12 @@ export class MapPanel {
       await this.#startAnnotationAnswer(command.agent, id);
       return;
     }
-    const started = await this.#agentRunner.sendMessage(command.agent, command.message);
-    if (started !== 'started') {
+    const started = await this.#agentHost.sendMessage(command.agent, command.message);
+    if (started !== 'opened') {
       this.#post({
         type: 'error',
-        code: started === 'active' ? 'AGENT_RUN_ACTIVE' : 'AGENT_NOT_READY',
-        message:
-          started === 'active' ? 'Agent 正在处理上一条消息，请稍候。' : 'Agent 尚未配置完成。',
+        code: 'AGENT_NOT_READY',
+        message: 'Agent 的 MCP 或上下文 hook 尚未配置完成。',
       });
     }
   }
@@ -419,15 +392,12 @@ export class MapPanel {
       this.#post({ type: 'error', code: 'ANNOTATION_NOT_FOUND', message: '找不到该标注' });
       return;
     }
-    const started = await this.#agentRunner.start(agent, 'annotation_answer', annotationId);
-    if (started === 'started') return;
+    const started = await this.#agentHost.start(agent, 'annotation_answer', annotationId);
+    if (started === 'opened') return;
     this.#post({
       type: 'error',
-      code: started === 'active' ? 'AGENT_RUN_ACTIVE' : 'AGENT_NOT_READY',
-      message:
-        started === 'active'
-          ? '已有 AI 子任务正在运行，请先等待或停止它'
-          : '无法启动解释子任务；请刷新 Agent 配置，或复制手动任务',
+      code: 'AGENT_NOT_READY',
+      message: '无法打开原生 Agent；请刷新 Agent 配置，或复制手动任务',
     });
   }
 
@@ -435,21 +405,18 @@ export class MapPanel {
     const issue = approvedChangeStartIssue(
       this.#service.snapshot,
       proposalId,
-      this.#agentRunner.timestamp(),
+      this.#agentHost.timestamp(),
     );
     if (issue !== undefined) {
       this.#post({ type: 'error', ...issue });
       return;
     }
-    const started = await this.#agentRunner.start(agent, 'approved_change', proposalId);
-    if (started === 'started') return;
+    const started = await this.#agentHost.start(agent, 'approved_change', proposalId);
+    if (started === 'opened') return;
     this.#post({
       type: 'error',
-      code: started === 'active' ? 'AGENT_RUN_ACTIVE' : 'AGENT_NOT_READY',
-      message:
-        started === 'active'
-          ? '已有 Agent 子线程正在运行，请先等待或停止它'
-          : '无法启动内部编辑子线程；请刷新 Agent 配置，或使用手动任务兜底',
+      code: 'AGENT_NOT_READY',
+      message: '无法打开原生 Agent；请刷新 Agent 配置，或使用手动任务兜底',
     });
   }
 
@@ -646,38 +613,6 @@ export class MapPanel {
       ...(agentPaneHeight === undefined ? {} : { agentPaneHeight }),
       ...(agentPaneView === undefined ? {} : { agentPaneView }),
     });
-    const conversation = this.#agentRunner.conversation;
-    if (conversation !== undefined) this.#post({ type: 'agent/conversation', conversation });
-  }
-
-  async #exportAgentConversation(): Promise<void> {
-    const conversation = this.#agentRunner.conversation;
-    if (conversation === undefined || conversation.messages.length === 0) {
-      this.#post({
-        type: 'error',
-        code: 'CONVERSATION_EMPTY',
-        message: '当前没有可导出的 Agent 对话。',
-      });
-      return;
-    }
-    const exportedAt = this.#agentRunner.timestamp();
-    const target = await window.showSaveDialog({
-      defaultUri: Uri.joinPath(this.#service.root, agentConversationFileName(exportedAt)),
-      filters: { Markdown: ['md'] },
-      saveLabel: '导出对话记录',
-    });
-    if (target === undefined) return;
-    const text = serializeAgentConversation({
-      workspace: this.#service.root.fsPath,
-      branch: this.#service.snapshot.branchKey,
-      mapRevision: this.#service.snapshot.revision,
-      exportedAt,
-      conversation,
-      ...(this.#agentRunner.lastRun === undefined ? {} : { run: this.#agentRunner.lastRun }),
-      rawOutput: this.#agentRunner.lastRawOutput,
-    });
-    await workspace.fs.writeFile(target, new TextEncoder().encode(text));
-    void window.showInformationMessage(`God View：对话记录已导出到 ${target.fsPath}`);
   }
 
   async #openSource(path: string, startLine?: number): Promise<void> {

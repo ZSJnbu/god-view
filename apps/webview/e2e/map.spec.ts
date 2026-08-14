@@ -14,23 +14,26 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByText(/当前绘制 \d+ 个节点 · \d+ 根连线/u)).toBeVisible();
 });
 
-test('常驻 Agent 对话在插件内实时回复，并保留明确的修改审批边界', async ({ page }) => {
-  const panel = page.getByRole('region', { name: '项目 Agent 对话' });
+test('原生 Agent 入口把对话和权限留在官方终端，并保留修改审批边界', async ({ page }) => {
+  const panel = page.getByRole('region', { name: '原生项目 Agent' });
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText('普通对话只读');
-  await page.getByLabel('发送给项目 Agent').fill('订单数据如何流动？');
-  await page.getByRole('button', { name: '发送' }).click();
-  await expect(panel).toContainText('正在读取最新项目地图…');
-  await expect(panel).toContainText('订单从 API 入口进入 Orders，再调用 Payments 完成授权。');
-  const changeRequest = page.getByRole('checkbox', { name: '作为修改请求（先审批范围）' });
+  await expect(panel).toContainText('God View 不再运行一套独立 Agent');
+  await expect(panel).toContainText('系统权限申请也会在那里出现');
+  await page.getByRole('button', { name: '打开 / 聚焦终端' }).click();
+  await page.getByLabel('发送给原生项目 Agent').fill('订单数据如何流动？');
+  await page.getByRole('button', { name: '发送到终端' }).click();
+  const changeRequest = page.getByRole('checkbox', {
+    name: '作为修改请求（先形成 God View 方案）',
+  });
   await expect(changeRequest).toBeEnabled();
   await changeRequest.check();
-  await expect(panel).toContainText('当前未选模块，将使用项目顶层模块作为修改上下文');
-  await page.getByLabel('发送给项目 Agent').fill('把它实现成个人博客');
-  await page.getByRole('button', { name: '发送' }).click();
+  await expect(changeRequest).toBeChecked();
+  await page.getByLabel('发送给原生项目 Agent').fill('把它实现成个人博客');
+  await page.getByRole('button', { name: '发送到终端' }).click();
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
   );
+  expect(commands).toContainEqual({ type: 'openAgentTerminal', agent: 'codex' });
   expect(commands).toContainEqual({
     type: 'sendAgentMessage',
     agent: 'codex',
@@ -45,23 +48,13 @@ test('常驻 Agent 对话在插件内实时回复，并保留明确的修改审�
   });
 });
 
-test('“继续处理”从澄清方向到方案批准、执行、Diff 验收形成完整闭环', async ({ page }) => {
-  const panel = page.getByRole('region', { name: '项目 Agent 对话' });
-  await page.getByRole('checkbox', { name: '作为修改请求（先审批范围）' }).check();
-  await page.getByLabel('发送给项目 Agent').fill('继续处理');
-  await page.getByRole('button', { name: '发送' }).click();
+test('原生 Agent 提交方案后，批准、执行、画布更新与 Diff 验收形成完整闭环', async ({ page }) => {
+  await page.getByRole('checkbox', { name: '作为修改请求（先形成 God View 方案）' }).check();
+  await page.getByLabel('发送给原生项目 Agent').fill('继续处理');
+  await page.getByRole('button', { name: '发送到终端' }).click();
 
-  const run = page.getByRole('region', { name: 'Agent 标注解释子线程进度' });
-  await expect(run).toContainText('希望继续处理哪个方向？');
-  await expect(run).toContainText('answer_annotation 已接受');
-  await expect(panel).not.toContainText('自动执行失败');
-  await run.getByLabel('视觉优化（推荐）').check();
-  await run.getByRole('button', { name: '继续' }).click();
-
-  await expect(run).toContainText('标注分析与修改方案已回写');
-  await expect(run).toContainText('✓ 标注分析已回写到权威地图');
   const approval = page.getByRole('region', { name: '等待批准并实现' });
-  await expect(approval).toContainText('方案已准备好，等待你批准后实现');
+  await expect(approval).toContainText('方案已准备好，等待你批准后交给原生 Agent');
   await expect(approval).toContainText('继续视觉优化并保持现有功能边界');
   await approval.getByRole('button', { name: '批准并开始实现' }).click();
 
@@ -83,7 +76,6 @@ test('“继续处理”从澄清方向到方案批准、执行、Diff 验收形
         message: '继续处理',
         mode: 'change',
       },
-      { type: 'answerAgentQuestion', runId: 'continue-run-e2e', answer: 'visual' },
       expect.objectContaining({
         type: 'approveProposal',
         proposalId: 'proposal.continue-e2e',
@@ -98,65 +90,70 @@ test('“继续处理”从澄清方向到方案批准、执行、Diff 验收形
   );
 });
 
-test('Agent 写越界文件前显示扩围文件与原因，并提交专用用户决定', async ({ page }) => {
+test('原生 Agent 写越界文件前显示权威扩围申请，并提交专用用户决定', async ({ page }) => {
   await page.evaluate(() => {
+    const timestamp = '2026-08-11T00:00:00.000Z';
+    const harness = window as unknown as {
+      __godViewSnapshot: { document: { revision: number; activeChanges: unknown[] } };
+    };
+    const active = {
+      changeSetId: 'change.orders',
+      sessionId: 'native-agent-e2e',
+      intent: '修改订单并补充测试',
+      startedAt: timestamp,
+      approvedScope: ['src/orders/index.ts'],
+      touchedNodeIds: [],
+      touchedEdgeIds: [],
+      executionStatus: 'scope_violation',
+      scopeExpansionRequests: [
+        {
+          id: 'scope.orders-tests',
+          requestedFiles: ['src/orders.test.ts', 'src/test-helper.ts'],
+          reason: '需要补充回归测试和测试辅助函数',
+          status: 'pending',
+          requestedAt: timestamp,
+        },
+      ],
+    };
+    harness.__godViewSnapshot.document.activeChanges = [active];
+    harness.__godViewSnapshot.document.revision += 1;
     window.dispatchEvent(
       new MessageEvent('message', {
         data: {
-          type: 'agent/run',
-          run: {
-            runId: 'scope-run-e2e',
-            agent: 'codex',
-            state: 'awaiting_input',
-            output: ['God View 已记录扩围申请，尚未修改新增文件。'],
-            detail: 'Agent 正在等待你的选择。',
-            restartRequired: false,
-            purpose: 'approved_change',
-            proposalId: 'proposal.orders',
-            question: {
-              question: 'Agent 需要修改批准范围外的文件，是否允许扩大本次 ChangeSet 范围？',
-              options: [
-                { id: 'approved', label: '批准并继续' },
-                { id: 'rejected', label: '拒绝扩围' },
-              ],
-              scopeExpansion: {
-                requestId: 'scope.orders-tests',
-                changeSetId: 'change.orders',
-                requestedFiles: ['src/orders.test.ts', 'src/test-helper.ts'],
-                reason: '需要补充回归测试和测试辅助函数',
-              },
-            },
+          type: 'map/patch',
+          revision: harness.__godViewSnapshot.document.revision,
+          factsRevision: 1,
+          patch: {
+            upsertedNodes: [],
+            upsertedEdges: [],
+            removedNodeIds: [],
+            removedEdgeIds: [],
+            upsertedActiveChanges: [active],
           },
+          drift: [],
         },
       }),
     );
   });
 
-  const panel = page.getByRole('region', { name: '项目 Agent 对话' });
-  await expect(panel).toContainText('需要补充回归测试和测试辅助函数');
-  await expect(panel).toContainText('src/orders.test.ts');
-  await expect(panel).toContainText('src/test-helper.ts');
-  await expect(page.getByRole('button', { name: '批准并继续' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '拒绝扩围' })).toBeVisible();
-  await page.getByRole('button', { name: '批准并继续' }).click();
+  const review = page.getByRole('complementary', { name: 'ChangeSet Diff 审查' });
+  await expect(review).toContainText('需要补充回归测试和测试辅助函数');
+  await expect(review).toContainText('src/orders.test.ts');
+  await expect(review).toContainText('src/test-helper.ts');
+  await review.getByRole('button', { name: '批准并继续' }).click();
 
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
   );
   expect(commands).toContainEqual({
     type: 'decideScopeExpansion',
-    runId: 'scope-run-e2e',
     requestId: 'scope.orders-tests',
     changeSetId: 'change.orders',
     decision: 'approved',
   });
 });
 
-test('Agent 对话可导出，并可在停靠面板与可拖动缩放浮窗间切换', async ({ page }) => {
-  await page.getByLabel('发送给项目 Agent').fill('记录这次诊断');
-  await page.getByRole('button', { name: '发送' }).click();
-  await expect(page.getByRole('button', { name: '导出对话' })).toBeEnabled();
-  await page.getByRole('button', { name: '导出对话' }).click();
+test('原生 Agent 入口可在停靠面板与可拖动缩放浮窗间切换', async ({ page }) => {
   await page.getByRole('button', { name: '浮动窗口' }).click();
 
   const floating = page.getByTestId('agent-floating-pane');
@@ -211,7 +208,6 @@ test('Agent 对话可导出，并可在停靠面板与可拖动缩放浮窗间�
   );
   expect(commands).toEqual(
     expect.arrayContaining([
-      { type: 'exportAgentConversation' },
       expect.objectContaining({
         type: 'saveAgentPaneView',
         view: expect.objectContaining({ mode: 'floating' }),
@@ -224,7 +220,7 @@ test('Agent 对话可导出，并可在停靠面板与可拖动缩放浮窗间�
   );
 });
 
-test('空地图显示已配置状态并完成自动 Agent 输出与选择闭环', async ({ page }) => {
+test('空地图配置 MCP 与 hook，并在原生终端启动首次建图', async ({ page }) => {
   await page.goto('/?empty=1');
   await expect(
     page.getByRole('heading', { name: '让 Agent 基于代码事实创建第一版地图' }),
@@ -238,12 +234,8 @@ test('空地图显示已配置状态并完成自动 Agent 输出与选择闭环'
   await expect(page.getByRole('radio', { name: /Claude Code/u })).toBeChecked();
   await page.getByRole('radio', { name: /Codex CLI/u }).check();
   await expect(page.getByRole('radio', { name: /Codex CLI/u })).toBeChecked();
-  await page.getByRole('button', { name: '启动首次建图' }).click();
-  await expect(page.getByText('正在分析项目入口与数据流…')).toBeVisible();
-  await expect(page.getByText('如何归类仓库中的工程文档？')).toBeVisible();
-  await page.getByRole('radio', { name: /工程知识分组/u }).check();
-  await page.getByRole('button', { name: '继续' }).click();
-  await expect(page.getByText(/请退出并重启其他已打开的 Agent 会话/u)).toBeVisible();
+  await page.getByRole('button', { name: '在原生终端启动首次建图' }).click();
+  await expect(page.getByText(/已有 Agent 会话不会热加载新配置/u)).toBeVisible();
   await page.getByRole('button', { name: '复制手动任务' }).click();
   await page.getByRole('button', { name: '复制手动接入命令' }).click();
 
@@ -254,7 +246,6 @@ test('空地图显示已配置状态并完成自动 Agent 输出与选择闭环'
     expect.arrayContaining([
       { type: 'configureAgent', agent: 'claude-code' },
       { type: 'startInitialization', agent: 'codex' },
-      { type: 'answerAgentQuestion', runId: 'run-e2e', answer: 'group' },
       { type: 'generateAgentTask' },
       { type: 'copyAgentSetup' },
     ]),
@@ -325,7 +316,9 @@ test('没有分组或文件节点时提供 AI 增量补全入口', async ({ page
   );
 
   await page.getByRole('button', { name: '＋ AI 补全关键文件关系' }).click();
-  await expect(page.getByRole('region', { name: 'Agent 关键文件关系补全进度' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '原生项目 Agent' })).toContainText(
+    '对话、权限与恢复由官方终端处理',
+  );
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
   );
@@ -447,9 +440,7 @@ test('已有地图可由当前 Agent 重新初始化，并保留地图直到重�
   await expect(page.getByRole('button', { name: '重新初始化' })).toBeVisible();
   await page.getByRole('button', { name: '重新初始化' }).click();
   await expect(page.getByRole('application', { name: '项目地图' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Agent 重新初始化进度' })).toContainText(
-    '重新初始化',
-  );
+  await expect(page.getByRole('region', { name: '原生项目 Agent' })).toBeVisible();
 
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
@@ -534,6 +525,55 @@ test('讲解可播放、暂停、切换速度、逐步导航和退出', async ({
   await expect(page.getByRole('region', { name: '项目讲解' })).toBeVisible();
 });
 
+test('仅凭 MCP 地图补丁即可暂停、逐步并回放 AI 对画布的调整', async ({ page }) => {
+  await page.evaluate(() => {
+    const harness = window as unknown as {
+      __godViewSnapshot: {
+        document: { revision: number; nodes: Record<string, unknown>[] };
+      };
+    };
+    const orders = harness.__godViewSnapshot.document.nodes.find(
+      (node) => node['id'] === 'module.orders',
+    );
+    if (orders === undefined) throw new Error('fixture 缺少 Orders 节点');
+    for (const responsibility of ['AI 调整第一步', 'AI 调整第二步']) {
+      harness.__godViewSnapshot.document.revision += 1;
+      const updated = {
+        ...orders,
+        responsibility,
+        revision: harness.__godViewSnapshot.document.revision,
+      };
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'map/patch',
+            revision: harness.__godViewSnapshot.document.revision,
+            factsRevision: 1,
+            patch: {
+              upsertedNodes: [updated],
+              upsertedEdges: [],
+              removedNodeIds: [],
+              removedEdgeIds: [],
+            },
+            drift: [],
+          },
+        }),
+      );
+    }
+  });
+
+  const timeline = page.getByRole('region', { name: '地图变更时间线' });
+  await expect(timeline).toContainText('权威 r5');
+  await timeline.getByRole('button', { name: '暂停' }).click();
+  await timeline.getByRole('button', { name: '下一步' }).click();
+  await expect(timeline).toContainText('画面 r4');
+  await timeline.getByRole('button', { name: '跳到最新' }).click();
+  await expect(timeline).toContainText('画面 r5');
+  await timeline.getByRole('button', { name: '回放画布调整' }).click();
+  await expect(timeline).toContainText('正在回放画布调整');
+  await expect(timeline).toContainText('画面 r3');
+});
+
 test('创建解释标注、预览上下文、接收安全答案并解决', async ({ page }) => {
   await page.getByRole('searchbox', { name: '搜索节点' }).fill('Orders');
   await page.getByRole('button', { name: /Orders/u }).click();
@@ -544,18 +584,11 @@ test('创建解释标注、预览上下文、接收安全答案并解决', async
   await expect(page.getByLabel('内容')).toBeFocused();
   await page.getByLabel('内容').fill('为什么订单依赖支付？');
   await page.getByRole('button', { name: '创建解释标注' }).click();
-  await expect(page.getByText(/标注已创建；已配置 Agent/u)).toBeVisible();
+  await expect(page.getByText(/标注已创建；已配置 Agent 时会发送到官方终端/u)).toBeVisible();
   await expect(page.getByText('为什么订单依赖支付？')).toBeVisible();
-  const run = page.getByRole('region', { name: 'Agent 标注解释子线程进度' });
-  await expect(run).toBeVisible();
-  await expect(run).toContainText('正在读取地图与允许的代码位置');
-  await expect(page.getByRole('button', { name: /复制手动任务/u })).toHaveCount(0);
-  await expect(run).toContainText('已读取权威地图：r3 · 3 个节点 · 2 条关系');
-  await expect(run).not.toContainText('unclassifiedPaths');
-  await expect(run).toContainText('answer_annotation 已接受', { timeout: 2_000 });
-  await expect(
-    page.getByText('<script>alert(1)</script> 支付授权在订单确认前完成。'),
-  ).toBeVisible();
+  await expect(page.getByText('<script>alert(1)</script> 支付授权在订单确认前完成。')).toBeVisible({
+    timeout: 2_000,
+  });
   // 页面固定只有三个专用 harness、宿主 harness 与应用入口；答案中的标签必须作为文本，不能生成额外脚本节点。
   expect(await page.locator('script').count()).toBe(5);
   await page.getByText('详情与证据').click();
@@ -583,7 +616,7 @@ test('创建解释标注、预览上下文、接收安全答案并解决', async
   );
 });
 
-test('修改方案批准后在插件内编辑代码并同步模块关系视图', async ({ page }) => {
+test('修改方案批准后交给原生 Agent，并由 MCP 同步模块关系视图', async ({ page }) => {
   await page.getByRole('searchbox', { name: '搜索节点' }).fill('Orders');
   await page.getByRole('button', { name: /Orders/u }).click();
   await page.evaluate(() => {
@@ -657,18 +690,13 @@ test('修改方案批准后在插件内编辑代码并同步模块关系视图',
   });
   const approval = page.getByRole('region', { name: '等待批准并实现' });
   await expect(approval).toBeVisible();
-  await expect(approval).toContainText('方案已准备好，等待你批准后实现');
+  await expect(approval).toContainText('方案已准备好，等待你批准后交给原生 Agent');
   await expect(approval).toContainText('Agent 还没有修改代码');
   await expect(approval.getByRole('heading', { name: '修改方案' })).toBeVisible();
   await expect(page.getByText('请求本身没有授予写权限。')).toBeVisible();
   await approval.getByLabel('src/orders/index.test.ts').uncheck();
   await approval.getByRole('button', { name: '批准并开始实现' }).click();
   await expect(approval.getByText(/当前为 monitored 模式/u)).toBeVisible();
-  const run = page.getByRole('region', { name: 'Agent 项目编辑子线程进度' });
-  await expect(run).toBeVisible();
-  await expect(run).toContainText('正在编辑 src/orders/index.ts');
-  await expect(run).toContainText('正在更新 Orders 模块和支付依赖关系');
-  await expect(run).toContainText('complete_change 已接受', { timeout: 2_000 });
   await expect(page.getByRole('complementary', { name: 'ChangeSet Diff 审查' })).toContainText(
     'src/orders/index.ts',
   );
@@ -999,9 +1027,9 @@ test('失败方案显示真实原因，并且只能通过重新批准来重试',
   });
 
   const approval = page.getByRole('region', { name: '等待批准并实现' });
-  await expect(approval).toContainText('上次执行未成功，需要你决定是否重试');
+  await expect(approval).toContainText('上次执行未成功，需要重新决定');
   await expect(approval).toContainText('测试失败：src/retry.ts 没有通过回归验证。');
-  await expect(approval.getByRole('button', { name: '启动内部编辑 Agent' })).toHaveCount(0);
+  await expect(approval.getByRole('button', { name: '发送到原生 Agent 继续' })).toHaveCount(0);
   await approval.getByRole('button', { name: '重新批准并重试' }).click();
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,

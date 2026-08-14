@@ -8,11 +8,13 @@ import type { CompletedChange, WorkspacePath } from '@god-view/protocol';
 import type { AppStore } from '../app-store.js';
 import { useAppState } from './use-app-state.js';
 
+// eslint-disable-next-line complexity -- Diff、扩围审批和历史审查共享同一个可拖动面板。
 export function ChangeReview({
   store,
   onOpenDiff,
   onReview,
   onInterrupt,
+  onScopeExpansionDecision,
 }: {
   readonly store: AppStore;
   readonly onOpenDiff: (path: WorkspacePath) => void;
@@ -22,6 +24,11 @@ export function ChangeReview({
     note?: string,
   ) => void;
   readonly onInterrupt: (changeSetId: string) => void;
+  readonly onScopeExpansionDecision: (
+    changeSetId: string,
+    requestId: string,
+    decision: 'approved' | 'rejected',
+  ) => void;
 }): React.JSX.Element | null {
   const state = useAppState(store);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string>();
@@ -32,10 +39,14 @@ export function ChangeReview({
   );
   const completed = history.find((entry) => entry.changeSetId === selectedHistoryId) ?? history[0];
   const change = active ?? completed;
-  if (change?.diff === undefined) return null;
-  const hasChangeSetOutsideScope = change.diff.files.some(
-    (file) => file.scopeStatus === 'outside_scope' && file.attribution !== 'preexisting_overlap',
-  );
+  const pendingScopeRequests =
+    active?.scopeExpansionRequests?.filter((request) => request.status === 'pending') ?? [];
+  if (change === undefined || (change.diff === undefined && pendingScopeRequests.length === 0))
+    return null;
+  const hasChangeSetOutsideScope =
+    change.diff?.files.some(
+      (file) => file.scopeStatus === 'outside_scope' && file.attribution !== 'preexisting_overlap',
+    ) ?? false;
   const drag = (event: ReactPointerEvent<HTMLElement>): void => {
     const panel = event.currentTarget.closest<HTMLElement>('.change-review');
     if (panel === null) return;
@@ -79,34 +90,70 @@ export function ChangeReview({
         </span>
         <strong>ChangeSet Diff</strong>
         <span>
-          {change.diff.files.length} 个文件 · +{change.diff.additions} / -{change.diff.deletions}
+          {change.diff === undefined
+            ? '等待范围审批'
+            : `${String(change.diff.files.length)} 个文件 · +${String(change.diff.additions)} / -${String(change.diff.deletions)}`}
         </span>
       </header>
-      <ul>
-        {change.diff.files.map((file) => (
-          <li
-            key={file.path}
-            data-scope={
-              file.attribution === 'preexisting_overlap' ? 'preexisting' : file.scopeStatus
-            }
-          >
+      {pendingScopeRequests.map((request) => (
+        <section className="scope-expansion-card" key={request.id}>
+          <strong>原生 Agent 申请扩大 ChangeSet 范围</strong>
+          <p>{request.reason}</p>
+          <p>{request.requestedFiles.join('、')}</p>
+          <div className="annotation-thread__actions">
             <button
               type="button"
+              className="chip chip--active"
               onClick={() => {
-                onOpenDiff(file.path);
+                onScopeExpansionDecision(active?.changeSetId ?? '', request.id, 'approved');
               }}
             >
-              {file.status} · {file.path}
+              批准并继续
             </button>
-            <span>
-              +{file.additions} / -{file.deletions} ·{' '}
-              {scopeLabel(file.scopeStatus, file.attribution)} ·{' '}
-              {attributionLabel(file.attribution)}
-            </span>
-          </li>
-        ))}
-      </ul>
-      <small>God View 仅保存路径、统计和哈希；源码内容由 VS Code 原生 Git Diff 打开。</small>
+            <button
+              type="button"
+              className="chip"
+              onClick={() => {
+                onScopeExpansionDecision(active?.changeSetId ?? '', request.id, 'rejected');
+              }}
+            >
+              拒绝扩围
+            </button>
+          </div>
+          <small>
+            审批会写入权威 ChangeSet；Agent 可在原生终端中继续，无需 God View 恢复会话。
+          </small>
+        </section>
+      ))}
+      {change.diff !== undefined && (
+        <ul>
+          {change.diff.files.map((file) => (
+            <li
+              key={file.path}
+              data-scope={
+                file.attribution === 'preexisting_overlap' ? 'preexisting' : file.scopeStatus
+              }
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenDiff(file.path);
+                }}
+              >
+                {file.status} · {file.path}
+              </button>
+              <span>
+                +{file.additions} / -{file.deletions} ·{' '}
+                {scopeLabel(file.scopeStatus, file.attribution)} ·{' '}
+                {attributionLabel(file.attribution)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {change.diff !== undefined && (
+        <small>God View 仅保存路径、统计和哈希；源码内容由 VS Code 原生 Git Diff 打开。</small>
+      )}
       <MapImpact completed={completed} />
       {active === undefined && history.length > 0 && (
         <details className="change-review__history">

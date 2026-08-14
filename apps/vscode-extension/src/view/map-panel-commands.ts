@@ -38,27 +38,25 @@ export function isAgentCommand(command: WebviewCommand): command is Extract<
   {
     type:
       | 'refreshAgentStatus'
+      | 'openAgentTerminal'
       | 'startInitialization'
       | 'startReinitialization'
       | 'startMapCompletion'
       | 'startAnnotationAnswer'
       | 'startApprovedChange'
-      | 'answerAgentQuestion'
       | 'decideScopeExpansion'
-      | 'cancelAgentRun'
       | 'sendAgentMessage';
   }
 > {
   return [
     'refreshAgentStatus',
+    'openAgentTerminal',
     'startInitialization',
     'startReinitialization',
     'startMapCompletion',
     'startAnnotationAnswer',
     'startApprovedChange',
-    'answerAgentQuestion',
     'decideScopeExpansion',
-    'cancelAgentRun',
     'sendAgentMessage',
   ].includes(command.type);
 }
@@ -89,14 +87,9 @@ export function isHostCommand(
   command: WebviewCommand,
 ): command is Extract<
   WebviewCommand,
-  { type: 'generateAgentTask' | 'copyAgentSetup' | 'configureAgent' | 'exportAgentConversation' }
+  { type: 'generateAgentTask' | 'copyAgentSetup' | 'configureAgent' }
 > {
-  return [
-    'generateAgentTask',
-    'copyAgentSetup',
-    'configureAgent',
-    'exportAgentConversation',
-  ].includes(command.type);
+  return ['generateAgentTask', 'copyAgentSetup', 'configureAgent'].includes(command.type);
 }
 
 export function formatApprovedChangeTask(proposal: ChangeProposal): string {
