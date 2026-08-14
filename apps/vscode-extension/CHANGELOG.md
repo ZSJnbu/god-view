@@ -2,6 +2,12 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.31 - 2026-08-14
+
+- Treats Git porcelain directory entries such as `app/` and `public/` as covering their expanded Diff files, preserving the correct `preexisting_overlap` attribution.
+- Prevents task-preexisting untracked files from becoming false `SCOPE_VIOLATION` failures when the Agent did not write them.
+- Applies the same directory-aware comparison to approval overlap warnings and adds a real-Git regression for collapsed untracked directories.
+
 ## 0.3.30 - 2026-08-14
 
 - Shows authoritative active, failed, expired and completed execution states on approved proposals instead of returning to a misleading generic start button.
