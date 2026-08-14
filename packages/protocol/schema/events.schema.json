@@ -260,6 +260,26 @@
         "diff": { "$ref": "graph.schema.json#/$defs/ChangeDiffSummary" }
       }
     },
+    "ScopeExpansionRequestedPayload": {
+      "title": "ScopeExpansionRequestedPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request"],
+      "properties": {
+        "request": { "$ref": "graph.schema.json#/$defs/ScopeExpansionRequest" }
+      }
+    },
+    "ScopeExpansionDecidedPayload": {
+      "title": "ScopeExpansionDecidedPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changeSetId", "requestId", "decision"],
+      "properties": {
+        "changeSetId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "requestId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "decision": { "type": "string", "enum": ["approved", "rejected"] }
+      }
+    },
     "ChangeReviewedPayload": {
       "title": "ChangeReviewedPayload",
       "type": "object",
@@ -569,6 +589,38 @@
         }
       ]
     },
+    "ScopeExpansionRequestedEvent": {
+      "title": "ScopeExpansionRequestedEvent",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/EventEnvelope" },
+        {
+          "type": "object",
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "scope_expansion_requested" },
+            "payload": { "$ref": "#/$defs/ScopeExpansionRequestedPayload" }
+          }
+        }
+      ]
+    },
+    "ScopeExpansionDecidedEvent": {
+      "title": "ScopeExpansionDecidedEvent",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/EventEnvelope" },
+        {
+          "type": "object",
+          "required": ["type", "payload"],
+          "properties": {
+            "type": { "const": "scope_expansion_decided" },
+            "payload": { "$ref": "#/$defs/ScopeExpansionDecidedPayload" }
+          }
+        }
+      ]
+    },
     "ReservedEventType": {
       "title": "ReservedEventType",
       "type": "string",
@@ -620,6 +672,8 @@
         { "$ref": "#/$defs/ChangeRejectedEvent" },
         { "$ref": "#/$defs/ChangeObservedEvent" },
         { "$ref": "#/$defs/ChangeReviewedEvent" },
+        { "$ref": "#/$defs/ScopeExpansionRequestedEvent" },
+        { "$ref": "#/$defs/ScopeExpansionDecidedEvent" },
         { "$ref": "#/$defs/ReservedEvent" }
       ]
     }

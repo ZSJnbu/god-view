@@ -120,6 +120,7 @@ describe.each(['codex', 'claude-code'] as const)('%s Adapter 完整 MCP 能力�
           'request_write_access',
           'propose_change',
           'start_approved_change',
+          'request_scope_expansion',
           'complete_change',
         ]),
       );
@@ -168,6 +169,18 @@ describe.each(['codex', 'claude-code'] as const)('%s Adapter 完整 MCP 能力�
         approvalToken: 'approval-contract',
       });
       expect(started.eventId).toBeDefined();
+      const expansion = await call(client, 'request_scope_expansion', {
+        sessionId: `${adapter}.session`,
+        idempotencyKey: 'expand-tests',
+        changeSetId: `${started.eventId ?? 'missing'}.change`,
+        baseMapRevision: 8,
+        requestedFiles: ['src/orders.test.ts'],
+        reason: '需要补充回归测试',
+      });
+      expect(expansion.scopeExpansionRequest).toMatchObject({
+        requestedFiles: ['src/orders.test.ts'],
+        status: 'pending',
+      });
       await call(client, 'complete_change', {
         sessionId: `${adapter}.session`,
         idempotencyKey: 'complete',
@@ -184,6 +197,7 @@ describe.each(['codex', 'claude-code'] as const)('%s Adapter 完整 MCP 能力�
         'write_access_requested',
         'change_proposal',
         'change_start',
+        'scope_expansion_requested',
         'change_complete',
       ]);
       expect(events.every((event) => event.actor?.adapterId === adapter)).toBe(true);

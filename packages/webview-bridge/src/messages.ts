@@ -74,6 +74,12 @@ export interface AgentQuestionOption {
 export interface AgentQuestion {
   readonly question: string;
   readonly options: readonly AgentQuestionOption[];
+  readonly scopeExpansion?: {
+    readonly requestId: Identifier;
+    readonly changeSetId: Identifier;
+    readonly requestedFiles: readonly WorkspacePath[];
+    readonly reason: string;
+  };
 }
 
 export interface AgentRunView {
@@ -192,6 +198,13 @@ export type WebviewCommand =
       readonly target: 'groups' | 'files';
     }
   | { readonly type: 'answerAgentQuestion'; readonly runId: string; readonly answer: string }
+  | {
+      readonly type: 'decideScopeExpansion';
+      readonly runId: string;
+      readonly requestId: Identifier;
+      readonly changeSetId: Identifier;
+      readonly decision: 'approved' | 'rejected';
+    }
   | { readonly type: 'cancelAgentRun'; readonly runId: string }
   | {
       readonly type: 'sendAgentMessage';

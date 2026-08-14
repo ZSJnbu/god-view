@@ -330,6 +330,15 @@ export function App({
         onAnswer={(runId, answer) => {
           messenger.send({ type: 'answerAgentQuestion', runId, answer });
         }}
+        onScopeExpansionDecision={(runId, requestId, changeSetId, decision) => {
+          messenger.send({
+            type: 'decideScopeExpansion',
+            runId,
+            requestId,
+            changeSetId,
+            decision,
+          });
+        }}
         onCancel={(runId) => {
           messenger.send({ type: 'cancelAgentRun', runId });
         }}

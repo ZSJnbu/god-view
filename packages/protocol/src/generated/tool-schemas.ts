@@ -1276,4 +1276,85 @@ export const toolInputSchemas: Readonly<Record<string, SchemaObject>> = {
     }
   ]
 },
+  "request_scope_expansion": {
+  "title": "RequestScopeExpansionInput",
+  "description": "在修改任何未批准路径之前申请扩大当前 ChangeSet 范围；调用后必须等待用户决定。",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "allOf": [
+    {
+      "title": "SessionScopedInput",
+      "description": "所有写工具的公共入参。idempotencyKey 重复提交同一 key 不产生重复节点或关系。",
+      "type": "object",
+      "required": [
+        "sessionId",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "sessionId": {
+          "title": "Identifier",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "idempotencyKey": {
+          "title": "Identifier",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "baseMapRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changeSetId": {
+          "title": "Identifier",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "changeSetId",
+        "requestedFiles",
+        "reason",
+        "baseMapRevision"
+      ],
+      "properties": {
+        "changeSetId": {
+          "title": "Identifier",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "requestedFiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "title": "WorkspacePath",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))(?!.*:[/\\\\][/\\\\]).+$",
+            "description": "工作区相对路径。拒绝绝对路径、盘符 URI 和 .. 穿越。"
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    }
+  ]
+},
 };

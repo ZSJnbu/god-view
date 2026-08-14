@@ -4,6 +4,12 @@ import type { AgentRunView, ConfigurableAgent } from '@god-view/webview-bridge';
 export function AgentRunPanel(props: {
   readonly run: AgentRunView;
   readonly onAnswer: (runId: string, answer: string) => void;
+  readonly onScopeExpansionDecision?: (
+    runId: string,
+    requestId: string,
+    changeSetId: string,
+    decision: 'approved' | 'rejected',
+  ) => void;
   readonly onCancel: (runId: string) => void;
   readonly compact?: boolean;
 }): React.JSX.Element {
@@ -37,56 +43,109 @@ export function AgentRunPanel(props: {
       {props.run.state === 'awaiting_input' && props.run.question !== undefined && (
         <fieldset className="agent-question">
           <legend>{props.run.question.question}</legend>
-          {props.run.question.options.map((option) => (
-            <label key={option.id}>
-              <input
-                type="radio"
-                name="agent-answer"
-                value={option.id}
-                checked={answer === option.id}
-                onChange={() => {
-                  setAnswer(option.id);
+          {props.run.question.scopeExpansion !== undefined && (
+            <div className="agent-question__scope">
+              <strong>申请原因</strong>
+              <p>{props.run.question.scopeExpansion.reason}</p>
+              <strong>新增文件</strong>
+              <ul>
+                {props.run.question.scopeExpansion.requestedFiles.map((path) => (
+                  <li key={path}>{path}</li>
+                ))}
+              </ul>
+              <small>批准后会先更新权威 approvedScope，再恢复同一个 Agent 会话。</small>
+            </div>
+          )}
+          {props.run.question.scopeExpansion === undefined &&
+            props.run.question.options.map((option) => (
+              <label key={option.id}>
+                <input
+                  type="radio"
+                  name="agent-answer"
+                  value={option.id}
+                  checked={answer === option.id}
+                  onChange={() => {
+                    setAnswer(option.id);
+                  }}
+                />
+                <span>
+                  <strong>{option.label}</strong>
+                  {option.description && <small>{option.description}</small>}
+                </span>
+              </label>
+            ))}
+          {props.run.question.scopeExpansion === undefined ? (
+            <>
+              <button
+                className="empty-map__primary"
+                type="button"
+                disabled={answer === undefined}
+                onClick={() => {
+                  if (answer !== undefined) props.onAnswer(props.run.runId, answer);
                 }}
-              />
-              <span>
-                <strong>{option.label}</strong>
-                {option.description && <small>{option.description}</small>}
-              </span>
-            </label>
-          ))}
-          <button
-            className="empty-map__primary"
-            type="button"
-            disabled={answer === undefined}
-            onClick={() => {
-              if (answer !== undefined) props.onAnswer(props.run.runId, answer);
-            }}
-          >
-            继续
-          </button>
-          <label className="agent-question__custom">
-            或补充说明
-            <textarea
-              rows={3}
-              maxLength={4000}
-              value={customAnswer}
-              placeholder="直接告诉 Agent 你的约束、选择或补充信息…"
-              onChange={(event) => {
-                setCustomAnswer(event.currentTarget.value);
-              }}
-            />
-          </label>
-          <button
-            className="chip"
-            type="button"
-            disabled={customAnswer.trim() === ''}
-            onClick={() => {
-              const message = customAnswer.trim();
-              if (message !== '') props.onAnswer(props.run.runId, message);
-            }}
-          >
-            发送补充说明
-          </button>
+              >
+                继续
+              </button>
+              <label className="agent-question__custom">
+                或补充说明
+                <textarea
+                  rows={3}
+                  maxLength={4000}
+                  value={customAnswer}
+                  placeholder="直接告诉 Agent 你的约束、选择或补充信息…"
+                  onChange={(event) => {
+                    setCustomAnswer(event.currentTarget.value);
+                  }}
+                />
+              </label>
+              <button
+                className="chip"
+                type="button"
+                disabled={customAnswer.trim() === ''}
+                onClick={() => {
+                  const message = customAnswer.trim();
+                  if (message !== '') props.onAnswer(props.run.runId, message);
+                }}
+              >
+                发送补充说明
+              </button>
+            </>
+          ) : (
+            <div className="agent-question__scope-actions">
+              <button
+                className="empty-map__primary"
+                type="button"
+                onClick={() => {
+                  const request = props.run.question?.scopeExpansion;
+                  if (request !== undefined)
+                    props.onScopeExpansionDecision?.(
+                      props.run.runId,
+                      request.requestId,
+                      request.changeSetId,
+                      'approved',
+                    );
+                }}
+              >
+                批准并继续
+              </button>
+              <button
+                className="chip"
+                type="button"
+                onClick={() => {
+                  const request = props.run.question?.scopeExpansion;
+                  if (request !== undefined)
+                    props.onScopeExpansionDecision?.(
+                      props.run.runId,
+                      request.requestId,
+                      request.changeSetId,
+                      'rejected',
+                    );
+                }}
+              >
+                拒绝扩围
+              </button>
+            </div>
+          )}
         </fieldset>
       )}
       {props.run.restartRequired && (

@@ -208,6 +208,11 @@ MVP 在用户当前 VS Code 工作区执行修改：
 - 尚未获写入授权的解释任务可并行，但 Codex 与 Claude Code 不得并发写同一 workspace；
 - 分支切换、重叠写入或基线变化使批准失效并暂停任务；
 - 写入批准作用域外路径产生 `scope_violation` 并暂停；已写文件保留供审查，不自动删除；
+- 托管 Agent 在准备写入批准作用域外路径时，必须先提交 `scope_expansion_requested` 并结束本轮；
+  只有 Extension Host 可以根据 Webview 用户命令产生 `scope_expansion_decided`。批准事件先扩大
+  ActiveChange 的权威范围，再恢复同一个 Agent 会话；拒绝不改变范围；
+- 已经观察到 `scope_violation` 后不得通过扩围事件事后补批；此边界属于 monitored 协议控制，
+  不能描述为逐文件操作系统沙箱；
 - 写入后取消/崩溃只停止后续步骤并保留 Diff，不自动回滚。
 
 以上批准和路径权限只适用于由 God View 启动的 managed task。用户在外部 Codex/Claude 会话中授权的写入属于 external session：Validation Engine 可以观察 Diff、关联显式上报事件并标记漂移，但 Permission Engine 不得把它伪装为已批准，也不能承诺阻止外部进程。

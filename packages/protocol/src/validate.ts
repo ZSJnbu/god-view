@@ -17,6 +17,7 @@ import type {
   RemoveEntityInput,
   ProposeChangeInput,
   RequestWriteAccessInput,
+  RequestScopeExpansionInput,
   StartApprovedChangeInput,
   ToolResult,
   UpsertStoryInput,
@@ -47,6 +48,8 @@ export const supportedEventTypes = [
   'change_rejected',
   'change_observed',
   'change_reviewed',
+  'scope_expansion_requested',
+  'scope_expansion_decided',
 ] as const;
 
 export type SupportedEventType = (typeof supportedEventTypes)[number];
@@ -83,6 +86,8 @@ const eventDefinitionByType: Record<SupportedEventType, string> = {
   change_rejected: 'ChangeRejectedEvent',
   change_observed: 'ChangeObservedEvent',
   change_reviewed: 'ChangeReviewedEvent',
+  scope_expansion_requested: 'ScopeExpansionRequestedEvent',
+  scope_expansion_decided: 'ScopeExpansionDecidedEvent',
 };
 
 export interface ToolInputByName {
@@ -97,6 +102,7 @@ export interface ToolInputByName {
   readonly request_write_access: RequestWriteAccessInput;
   readonly propose_change: ProposeChangeInput;
   readonly start_approved_change: StartApprovedChangeInput;
+  readonly request_scope_expansion: RequestScopeExpansionInput;
 }
 
 export type ToolName = keyof ToolInputByName;
@@ -113,6 +119,7 @@ const toolDefinitionByName: Record<ToolName, string> = {
   request_write_access: 'RequestWriteAccessInput',
   propose_change: 'ProposeChangeInput',
   start_approved_change: 'StartApprovedChangeInput',
+  request_scope_expansion: 'RequestScopeExpansionInput',
 };
 
 function toProtocolErrors(errors: readonly ErrorObject[] | null | undefined): ProtocolError[] {

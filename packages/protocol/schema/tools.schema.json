@@ -25,6 +25,9 @@
         "mapRevision": { "type": "integer", "minimum": 0 },
         "eventId": { "$ref": "common.schema.json#/$defs/Identifier" },
         "changeSetId": { "$ref": "common.schema.json#/$defs/Identifier" },
+        "scopeExpansionRequest": {
+          "$ref": "graph.schema.json#/$defs/ScopeExpansionRequest"
+        },
         "errors": { "type": "array", "items": { "$ref": "#/$defs/ToolError" } },
         "warnings": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/ShortNote" } }
       }
@@ -298,6 +301,30 @@
           "properties": {
             "proposalId": { "$ref": "common.schema.json#/$defs/Identifier" },
             "approvalToken": { "$ref": "common.schema.json#/$defs/Identifier" }
+          }
+        }
+      ]
+    },
+    "RequestScopeExpansionInput": {
+      "title": "RequestScopeExpansionInput",
+      "description": "在修改任何未批准路径之前申请扩大当前 ChangeSet 范围；调用后必须等待用户决定。",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/SessionScopedInput" },
+        {
+          "type": "object",
+          "required": ["changeSetId", "requestedFiles", "reason", "baseMapRevision"],
+          "properties": {
+            "changeSetId": { "$ref": "common.schema.json#/$defs/Identifier" },
+            "requestedFiles": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/WorkspacePath" }
+            },
+            "reason": { "type": "string", "minLength": 1, "maxLength": 500 }
           }
         }
       ]

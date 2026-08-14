@@ -592,6 +592,24 @@ describe('修改方案与批准状态机', () => {
       event('change_reviewed', { changeSetId: 'change.outside', status: 'accepted' }, 'user'),
     );
     expect(plain.ok ? undefined : plain.error.code).toBe(errorCodes.SCOPE_VIOLATION);
+    const preexistingChanges = new Map(completedChanges);
+    const outside = preexistingChanges.get('change.outside');
+    if (outside === undefined) throw new Error('missing completed change');
+    preexistingChanges.set('change.outside', {
+      ...outside,
+      diff: {
+        ...outside.diff,
+        files: outside.diff.files.map((file) => ({
+          ...file,
+          attribution: 'preexisting_overlap' as const,
+        })),
+      },
+    });
+    const acceptedPreexisting = apply(
+      { ...started, completedChanges: preexistingChanges },
+      event('change_reviewed', { changeSetId: 'change.outside', status: 'accepted' }, 'user'),
+    );
+    expect(acceptedPreexisting.completedChanges.get('change.outside')?.status).toBe('accepted');
     const withIssues = apply(
       pending,
       event(

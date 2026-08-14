@@ -16,3 +16,9 @@ The current Codex/Claude integration is `monitored`, not an enforcement sandbox.
 still write outside the approved paths before God View observes the Git change. God View then reports
 the scope violation and preserves the Diff for review; it does not delete or roll back files. Use the
 Agent host's own sandbox/permission controls for prevention.
+
+For managed editing runs, God View requires `request_scope_expansion` before an Agent writes a new
+path. The Extension Host—not Agent text—records approve/reject decisions and widens `approvedScope`
+before resuming the same CLI session. A process that ignores this protocol can still write because the
+workspace sandbox is not path-aware; God View rejects post-write approval and preserves that write as
+a scope violation.

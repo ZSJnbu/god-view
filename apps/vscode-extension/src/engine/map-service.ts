@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Extension Host 的单写者队列、Git 观察与用户审批必须共享同一生命周期。 */
 import { randomBytes } from 'node:crypto';
 import { EventEmitter, RelativePattern, Uri, workspace } from 'vscode';
 import {
@@ -31,10 +32,15 @@ import { diffSnapshots, isEmptyPatch } from './map-patch.js';
 import { buildAnnotationContext } from './annotation-context.js';
 import { isApprovalFailure, prepareApproval, type ApprovalFailure } from './proposal-approval.js';
 import type { MapServiceOptions, MapUpdate } from './map-service-types.js';
-import { rejectProposalEvent, reviewChangeEvent } from './user-events.js';
+import {
+  decideScopeExpansionEvent,
+  rejectProposalEvent,
+  reviewChangeEvent,
+} from './user-events.js';
 import { validateEntities } from './entity-validation.js';
 import { interruptActiveChange } from './change-interruption.js';
 import { watchSourceChanges } from './source-change-watcher.js';
+import { decidePendingScopeExpansion } from './scope-expansion-decision.js';
 import { acceptedEvent, rejectedEvent, unavailableRepository } from './event-acknowledgement.js';
 import { declaredPaths, publicDocument, readReducedMotion } from './map-service-helpers.js';
 export type { MapServiceOptions, MapUpdate } from './map-service-types.js';
@@ -369,6 +375,37 @@ export class MapService {
     return rejected;
   }
 
+  async decideScopeExpansion(
+    changeSetId: Identifier,
+    requestId: Identifier,
+    decision: 'approved' | 'rejected',
+  ): Promise<boolean> {
+    let decided = false;
+    await this.#queue.run('scope-expansion.decide', async () => {
+      decided = await decidePendingScopeExpansion({
+        snapshot: () => this.#binding.repositoryOrUndefined?.snapshot,
+        readGit: () => this.#git.read(),
+        rememberGit: (state) => {
+          this.#gitState = state;
+        },
+        observe: (snapshot) => this.#observeActiveChange(snapshot),
+        buildEvent: (snapshot) =>
+          decideScopeExpansionEvent(
+            {
+              snapshot,
+              eventId: this.#nextUserEventId('scope-expansion'),
+              timestamp: this.#options.now(),
+            },
+            { changeSetId, requestId, decision },
+          ),
+        apply: (event) => this.#applyEvent(event, 'webview:decideScopeExpansion'),
+        changeSetId,
+        requestId,
+      });
+    });
+    return decided;
+  }
+
   async reviewChange(
     changeSetId: Identifier,
     status: 'accepted' | 'accepted_with_issues',
@@ -489,7 +526,9 @@ export class MapService {
       computedAt: timestamp,
     });
     if (diff === undefined) return;
-    const executionStatus = diff.files.some((file) => file.scopeStatus === 'outside_scope')
+    const executionStatus = diff.files.some(
+      (file) => file.scopeStatus === 'outside_scope' && file.attribution !== 'preexisting_overlap',
+    )
       ? 'scope_violation'
       : 'in_progress';
     if (change.executionStatus === executionStatus && change.diff?.contentHash === diff.contentHash)

@@ -91,6 +91,13 @@ const toolDefinitions = [
     annotations: mapWriteAnnotations,
   },
   {
+    name: 'request_scope_expansion',
+    description:
+      '在修改任何批准范围外文件之前申请扩围。只创建待用户决定的申请，不授予权限；调用成功后立即停止本轮并等待 God View 用户批准或拒绝。',
+    schemaKey: 'request_scope_expansion',
+    annotations: mapWriteAnnotations,
+  },
+  {
     name: 'remove_node',
     description:
       '删除一个节点并级联标记其关系。用户已确认的模块不能被删除重建；改名请使用 upsert_node。',
@@ -138,6 +145,8 @@ async function dispatch(session: GatewaySession, name: ToolName, input: unknown)
       return session.proposeChange(input);
     case 'start_approved_change':
       return session.startApprovedChange(input);
+    case 'request_scope_expansion':
+      return session.requestScopeExpansion(input);
     case 'remove_node':
       return session.removeNode(input);
     case 'remove_edge':

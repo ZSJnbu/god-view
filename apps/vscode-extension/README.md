@@ -2,7 +2,7 @@
 
 让 Agent 在写代码的同时维护项目地图，让开发者实时看见项目如何被构建。
 
-> **当前阶段：0.3.28 本地发布候选版。**
+> **当前阶段：0.3.29 本地发布候选版。**
 > 持续建图、GuidedStory、原位解释、修改方案、用户批准、monitored ChangeSet、
 > Git Diff 摘要与用户验收已形成闭环，并由单元、Chromium 和 Extension Host 自动化覆盖。
 > 扩展未发布到 Marketplace。当前 VSIX 已内置 `god-view` Gateway/CLI，安装后可通过
@@ -47,6 +47,9 @@
   插件内部直接启动可写 Agent 子线程。编辑、验证、节点与关系更新、ChangeSet 完成和 Git
   Diff 待验收必须全部成功，任务才会显示完成；接受 Diff 后原标注自动标为已解决；
 - Agent 可申请写入并提交方案；用户缩小范围后批准，Gateway 以时效令牌启动 ChangeSet；
+- 托管编辑 Agent 准备修改 `approvedScope` 外的文件时，必须先通过
+  `request_scope_expansion` 提交文件列表和原因并停止本轮；用户批准后，扩展宿主先写入
+  权威审批事件、扩大本次 ChangeSet 范围，再恢复同一个 Codex/Claude 会话。拒绝不会扩围；
 - 空地图中可自动启动新的 Codex/Claude CLI 会话，流式显示进度、停止进程，并在 Agent
   提出 2–3 个结构化选项时让用户选择后恢复同一会话；
 - 已有地图可由用户确认后重新初始化：旧地图在新 ChangeSet 完成前保持可用，职责仍一致的
@@ -59,7 +62,9 @@
   拖动单个模块只保存该节点坐标，不重新布局、移动或隐藏其他模块；
 - Gateway 写事件后等待扩展归约确认；只有 reducer 真正接受才返回 `accepted: true`，
   未知 ChangeSet、悬空关系和确认超时会显式返回错误；
-- 扩展监控 Git Diff、标记越界文件，并由用户接受或带问题接受；接受不会执行 Git add/commit/push。
+- 扩展监控 Git Diff、标记越界文件，并由用户接受或带问题接受；任务开始前已有的未提交文件
+  单独标为 `preexisting_overlap`，不会仅因不在范围内就把本次 ChangeSet 判成越界；接受不会
+  执行 Git add/commit/push。
 - ChangeSet 历史可按完成时间查看状态、文件范围与保存的 Diff 元数据，并重新打开仍可用的 Git Diff。
 - 自动首次建图可停止由扩展启动的 CLI 子进程；中断可写 ChangeSet 仍只结束 God View
   状态并保留现有文件修改，不会终止用户在别处打开的 Agent 会话。
@@ -73,6 +78,8 @@
   Agent UI 会话；
 - 自动建图为 Codex 设置只读 sandbox，为 Claude 仅开放读取和 God View MCP 工具并禁用
   Bash/Edit/Write；用户自行启动的 Agent 仍是 monitored 模式，God View 不能阻止其写入；
+- 托管编辑的扩围审批是协议与宿主状态机边界，不是逐文件操作系统沙箱；若 Agent 进程绕过
+  工具先写文件，God View 会拒绝事后补批、标记 `scope_violation` 并保留 Diff；
 - 不自动创建分支/worktree，也不执行 Git add、commit、push、回滚或删除越界文件；
 - 不向云端发送任何数据，也没有任何遥测代码。
 - 不在不受信任或虚拟工作区激活；God View 会启动本地 Git、Agent CLI 与 Gateway 子进程，

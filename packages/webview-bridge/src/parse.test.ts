@@ -199,6 +199,27 @@ describe('Webview 命令解析', () => {
       parseWebviewCommand({ type: 'answerAgentQuestion', runId: 'run-1', answer: 'recommended' })
         .ok,
     ).toBe(true);
+    expect(
+      parseWebviewCommand({
+        type: 'decideScopeExpansion',
+        runId: 'run-1',
+        requestId: 'scope-1',
+        changeSetId: 'change-1',
+        decision: 'approved',
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: { type: 'decideScopeExpansion', decision: 'approved' },
+    });
+    expect(
+      parseWebviewCommand({
+        type: 'decideScopeExpansion',
+        runId: 'run-1',
+        requestId: 'scope-1',
+        changeSetId: 'change-1',
+        decision: 'later',
+      }).ok,
+    ).toBe(false);
     expect(parseWebviewCommand({ type: 'cancelAgentRun', runId: 'run-1' }).ok).toBe(true);
     expect(parseWebviewCommand({ type: 'startInitialization', agent: 'other' }).ok).toBe(false);
     expect(parseWebviewCommand({ type: 'startReinitialization', agent: 'other' }).ok).toBe(false);

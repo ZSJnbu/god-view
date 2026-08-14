@@ -670,6 +670,44 @@ export const eventsSchema: SchemaObject = {
         }
       }
     },
+    "ScopeExpansionRequestedPayload": {
+      "title": "ScopeExpansionRequestedPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request"
+      ],
+      "properties": {
+        "request": {
+          "$ref": "graph.schema.json#/$defs/ScopeExpansionRequest"
+        }
+      }
+    },
+    "ScopeExpansionDecidedPayload": {
+      "title": "ScopeExpansionDecidedPayload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changeSetId",
+        "requestId",
+        "decision"
+      ],
+      "properties": {
+        "changeSetId": {
+          "$ref": "common.schema.json#/$defs/Identifier"
+        },
+        "requestId": {
+          "$ref": "common.schema.json#/$defs/Identifier"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "approved",
+            "rejected"
+          ]
+        }
+      }
+    },
     "ChangeReviewedPayload": {
       "title": "ChangeReviewedPayload",
       "type": "object",
@@ -1164,6 +1202,56 @@ export const eventsSchema: SchemaObject = {
         }
       ]
     },
+    "ScopeExpansionRequestedEvent": {
+      "title": "ScopeExpansionRequestedEvent",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EventEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "scope_expansion_requested"
+            },
+            "payload": {
+              "$ref": "#/$defs/ScopeExpansionRequestedPayload"
+            }
+          }
+        }
+      ]
+    },
+    "ScopeExpansionDecidedEvent": {
+      "title": "ScopeExpansionDecidedEvent",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EventEnvelope"
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "scope_expansion_decided"
+            },
+            "payload": {
+              "$ref": "#/$defs/ScopeExpansionDecidedPayload"
+            }
+          }
+        }
+      ]
+    },
     "ReservedEventType": {
       "title": "ReservedEventType",
       "type": "string",
@@ -1258,6 +1346,12 @@ export const eventsSchema: SchemaObject = {
         },
         {
           "$ref": "#/$defs/ChangeReviewedEvent"
+        },
+        {
+          "$ref": "#/$defs/ScopeExpansionRequestedEvent"
+        },
+        {
+          "$ref": "#/$defs/ScopeExpansionDecidedEvent"
         },
         {
           "$ref": "#/$defs/ReservedEvent"
@@ -1542,6 +1636,60 @@ export const graphSchema: SchemaObject = {
         }
       }
     },
+    "ScopeExpansionRequest": {
+      "title": "ScopeExpansionRequest",
+      "description": "Agent 在写入批准范围外文件之前提出的扩围申请。只有用户事件可以把 pending 改为 approved 或 rejected。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "changeSetId",
+        "sessionId",
+        "requestedFiles",
+        "reason",
+        "status",
+        "requestedAt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/Identifier"
+        },
+        "changeSetId": {
+          "$ref": "common.schema.json#/$defs/Identifier"
+        },
+        "sessionId": {
+          "$ref": "common.schema.json#/$defs/Identifier"
+        },
+        "requestedFiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/WorkspacePath"
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "requestedAt": {
+          "$ref": "common.schema.json#/$defs/Timestamp"
+        },
+        "decidedAt": {
+          "$ref": "common.schema.json#/$defs/Timestamp"
+        }
+      }
+    },
     "ActiveChange": {
       "title": "ActiveChange",
       "type": "object",
@@ -1618,6 +1766,13 @@ export const graphSchema: SchemaObject = {
           "maxItems": 2000,
           "items": {
             "$ref": "common.schema.json#/$defs/WorkspacePath"
+          }
+        },
+        "scopeExpansionRequests": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/ScopeExpansionRequest"
           }
         },
         "executionStatus": {
@@ -2497,6 +2652,9 @@ export const toolsSchema: SchemaObject = {
         "changeSetId": {
           "$ref": "common.schema.json#/$defs/Identifier"
         },
+        "scopeExpansionRequest": {
+          "$ref": "graph.schema.json#/$defs/ScopeExpansionRequest"
+        },
         "errors": {
           "type": "array",
           "items": {
@@ -2954,6 +3112,45 @@ export const toolsSchema: SchemaObject = {
             },
             "approvalToken": {
               "$ref": "common.schema.json#/$defs/Identifier"
+            }
+          }
+        }
+      ]
+    },
+    "RequestScopeExpansionInput": {
+      "title": "RequestScopeExpansionInput",
+      "description": "在修改任何未批准路径之前申请扩大当前 ChangeSet 范围；调用后必须等待用户决定。",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/SessionScopedInput"
+        },
+        {
+          "type": "object",
+          "required": [
+            "changeSetId",
+            "requestedFiles",
+            "reason",
+            "baseMapRevision"
+          ],
+          "properties": {
+            "changeSetId": {
+              "$ref": "common.schema.json#/$defs/Identifier"
+            },
+            "requestedFiles": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "common.schema.json#/$defs/WorkspacePath"
+              }
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
             }
           }
         }

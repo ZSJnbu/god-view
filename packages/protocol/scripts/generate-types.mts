@@ -33,6 +33,7 @@ const toolInputDefinitions = [
   ['request_write_access', 'RequestWriteAccessInput'],
   ['propose_change', 'ProposeChangeInput'],
   ['start_approved_change', 'StartApprovedChangeInput'],
+  ['request_scope_expansion', 'RequestScopeExpansionInput'],
 ] as const;
 
 /** 运行时校验用的 schema 文件。bundle.schema.json 只服务于类型生成，不参与校验。 */

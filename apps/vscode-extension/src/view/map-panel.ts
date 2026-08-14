@@ -287,6 +287,7 @@ export class MapPanel {
           | 'startAnnotationAnswer'
           | 'startApprovedChange'
           | 'answerAgentQuestion'
+          | 'decideScopeExpansion'
           | 'cancelAgentRun'
           | 'sendAgentMessage';
       }
@@ -299,6 +300,44 @@ export class MapPanel {
     if (command.type === 'answerAgentQuestion') {
       if (!this.#agentRunner.answer(command.runId, command.answer))
         this.#post({ type: 'error', code: 'AGENT_ANSWER_REJECTED', message: '该问题已失效' });
+      return;
+    }
+    if (command.type === 'decideScopeExpansion') {
+      const question = this.#agentRunner.lastRun?.question?.scopeExpansion;
+      if (
+        this.#agentRunner.lastRun?.runId !== command.runId ||
+        this.#agentRunner.lastRun.state !== 'awaiting_input' ||
+        question?.requestId !== command.requestId ||
+        question.changeSetId !== command.changeSetId
+      ) {
+        this.#post({ type: 'error', code: 'SCOPE_EXPANSION_STALE', message: '该扩围申请已失效' });
+        return;
+      }
+      const decided = await this.#service.decideScopeExpansion(
+        command.changeSetId,
+        command.requestId,
+        command.decision,
+      );
+      if (!decided) {
+        this.#post({
+          type: 'error',
+          code: 'SCOPE_EXPANSION_REJECTED',
+          message:
+            command.decision === 'approved'
+              ? '无法批准：申请已失效，或 Agent 已经先写入了范围外文件'
+              : '无法拒绝：申请已失效',
+        });
+        return;
+      }
+      if (
+        !this.#agentRunner.answerScopeExpansion(command.runId, command.requestId, command.decision)
+      ) {
+        this.#post({
+          type: 'error',
+          code: 'AGENT_RESUME_REJECTED',
+          message: '审批已记录，但 Agent 会话无法恢复',
+        });
+      }
       return;
     }
     if (command.type === 'cancelAgentRun') {

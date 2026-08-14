@@ -23,6 +23,8 @@ export type GodViewEvent =
   | ChangeRejectedEvent
   | ChangeObservedEvent
   | ChangeReviewedEvent
+  | ScopeExpansionRequestedEvent
+  | ScopeExpansionDecidedEvent
   | ReservedEvent;
 export type SessionStartEvent = EventEnvelope & {
   type: 'session_start';
@@ -129,6 +131,14 @@ export type ChangeObservedEvent = EventEnvelope & {
 export type ChangeReviewedEvent = EventEnvelope & {
   type: 'change_reviewed';
   payload: ChangeReviewedPayload;
+};
+export type ScopeExpansionRequestedEvent = EventEnvelope & {
+  type: 'scope_expansion_requested';
+  payload: ScopeExpansionRequestedPayload;
+};
+export type ScopeExpansionDecidedEvent = EventEnvelope & {
+  type: 'scope_expansion_decided';
+  payload: ScopeExpansionDecidedPayload;
 };
 /**
  * 协议已保留但当前实现尚未支持的事件类型。命令处理层返回 UNSUPPORTED_EVENT_TYPE，不静默接受。
@@ -240,6 +250,18 @@ export type StartApprovedChangeInput = SessionScopedInput & {
   proposalId: Identifier;
   approvalToken: Identifier;
 };
+/**
+ * 在修改任何未批准路径之前申请扩大当前 ChangeSet 范围；调用后必须等待用户决定。
+ */
+export type RequestScopeExpansionInput = SessionScopedInput & {
+  changeSetId: Identifier;
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  requestedFiles: WorkspacePath[];
+  reason: string;
+};
 
 /**
  * 仅用于类型生成的聚合入口：把所有需要导出的协议类型集中引用一次，使 json-schema-to-typescript 输出单个无重复声明的模块。本文件不用于运行时校验。
@@ -256,6 +278,7 @@ export interface GodViewProtocolBundle {
   writeAccessRequest?: WriteAccessRequest;
   changeProposal?: ChangeProposal;
   activeChange?: ActiveChange;
+  scopeExpansionRequest?: ScopeExpansionRequest;
   changeDiffSummary?: ChangeDiffSummary;
   completedChange?: CompletedChange;
   changeReviewedPayload?: ChangeReviewedPayload;
@@ -272,6 +295,7 @@ export interface GodViewProtocolBundle {
   requestWriteAccessInput?: RequestWriteAccessInput;
   proposeChangeInput?: ProposeChangeInput;
   startApprovedChangeInput?: StartApprovedChangeInput;
+  requestScopeExpansionInput?: RequestScopeExpansionInput;
   changeRejectedPayload?: ChangeRejectedPayload;
   adapterCapabilities?: AdapterCapabilities;
 }
@@ -596,6 +620,31 @@ export interface ChangeReviewedPayload {
   status: 'accepted' | 'accepted_with_issues';
   note?: string;
 }
+export interface ScopeExpansionRequestedPayload {
+  request: ScopeExpansionRequest;
+}
+/**
+ * Agent 在写入批准范围外文件之前提出的扩围申请。只有用户事件可以把 pending 改为 approved 或 rejected。
+ */
+export interface ScopeExpansionRequest {
+  id: Identifier;
+  changeSetId: Identifier;
+  sessionId: Identifier;
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  requestedFiles: WorkspacePath[];
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: Timestamp;
+  decidedAt?: Timestamp;
+}
+export interface ScopeExpansionDecidedPayload {
+  changeSetId: Identifier;
+  requestId: Identifier;
+  decision: 'approved' | 'rejected';
+}
 export interface GraphSnapshotDocument {
   schemaVersion: ProtocolVersion;
   workspaceId: Identifier;
@@ -702,6 +751,10 @@ export interface ActiveChange {
    * @maxItems 2000
    */
   preexistingChanges?: WorkspacePath[];
+  /**
+   * @maxItems 50
+   */
+  scopeExpansionRequests?: ScopeExpansionRequest[];
   executionStatus?: 'in_progress' | 'scope_violation' | 'conflicted' | 'interrupted' | 'failed';
   diff?: ChangeDiffSummary;
 }
@@ -751,6 +804,7 @@ export interface ToolResult {
   mapRevision: number;
   eventId?: Identifier;
   changeSetId?: Identifier;
+  scopeExpansionRequest?: ScopeExpansionRequest;
   errors: ToolError[];
   warnings?: ShortNote[];
 }

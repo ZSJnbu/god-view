@@ -1,6 +1,6 @@
 # Support matrix
 
-God View 0.3.28 targets local, trusted, file-backed VS Code workspaces. Claims below distinguish
+God View 0.3.29 targets local, trusted, file-backed VS Code workspaces. Claims below distinguish
 recorded evidence from targets that still require CI or environment-owner verification.
 
 | Environment                      | Status              | Evidence / limitation                                                               |
@@ -19,3 +19,6 @@ Automatic first-map initialization launches a new constrained CLI subprocess: Co
 read-only sandbox and Claude receives an explicit read/MCP allowlist plus write/shell denylist.
 Already-open or manually launched Agent sessions remain `monitored`; God View can surface their
 out-of-scope Git changes but cannot prevent those external processes from writing them.
+Managed editing runs add a protocol-level pre-write gate: the Agent requests new paths, the user
+decides in God View, and the Extension Host updates authoritative scope before resuming the same
+session. This is still monitored behavior, not a per-file operating-system sandbox.

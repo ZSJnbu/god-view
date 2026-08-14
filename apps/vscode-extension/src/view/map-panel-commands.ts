@@ -43,6 +43,7 @@ export function isAgentCommand(command: WebviewCommand): command is Extract<
       | 'startAnnotationAnswer'
       | 'startApprovedChange'
       | 'answerAgentQuestion'
+      | 'decideScopeExpansion'
       | 'cancelAgentRun'
       | 'sendAgentMessage';
   }
@@ -55,6 +56,7 @@ export function isAgentCommand(command: WebviewCommand): command is Extract<
     'startAnnotationAnswer',
     'startApprovedChange',
     'answerAgentQuestion',
+    'decideScopeExpansion',
     'cancelAgentRun',
     'sendAgentMessage',
   ].includes(command.type);

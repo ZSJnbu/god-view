@@ -17,6 +17,7 @@
     "writeAccessRequest": { "$ref": "graph.schema.json#/$defs/WriteAccessRequest" },
     "changeProposal": { "$ref": "graph.schema.json#/$defs/ChangeProposal" },
     "activeChange": { "$ref": "graph.schema.json#/$defs/ActiveChange" },
+    "scopeExpansionRequest": { "$ref": "graph.schema.json#/$defs/ScopeExpansionRequest" },
     "changeDiffSummary": { "$ref": "graph.schema.json#/$defs/ChangeDiffSummary" },
     "completedChange": { "$ref": "graph.schema.json#/$defs/CompletedChange" },
     "changeReviewedPayload": { "$ref": "events.schema.json#/$defs/ChangeReviewedPayload" },
@@ -33,6 +34,7 @@
     "requestWriteAccessInput": { "$ref": "tools.schema.json#/$defs/RequestWriteAccessInput" },
     "proposeChangeInput": { "$ref": "tools.schema.json#/$defs/ProposeChangeInput" },
     "startApprovedChangeInput": { "$ref": "tools.schema.json#/$defs/StartApprovedChangeInput" },
+    "requestScopeExpansionInput": { "$ref": "tools.schema.json#/$defs/RequestScopeExpansionInput" },
     "changeRejectedPayload": { "$ref": "events.schema.json#/$defs/ChangeRejectedPayload" },
     "adapterCapabilities": { "$ref": "tools.schema.json#/$defs/AdapterCapabilities" }
   }

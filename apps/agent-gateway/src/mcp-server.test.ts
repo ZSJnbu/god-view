@@ -53,7 +53,7 @@ afterEach(async () => {
 });
 
 describe('工具清单', () => {
-  it('公开全部十二个地图、解释与审批工具', async () => {
+  it('公开全部十三个地图、解释与审批工具', async () => {
     const { tools } = await client.listTools();
 
     expect(tools.map((tool) => tool.name).sort()).toEqual([
@@ -64,6 +64,7 @@ describe('工具清单', () => {
       'propose_change',
       'remove_edge',
       'remove_node',
+      'request_scope_expansion',
       'request_write_access',
       'start_approved_change',
       'upsert_edge',
@@ -164,6 +165,32 @@ describe('工具调用', () => {
 
     expect(response.isError).toBe(false);
     expect(result.accepted).toBe(true);
+  });
+
+  it('扩围工具返回待用户决定的权威申请信息', async () => {
+    const response = await client.callTool({
+      name: 'request_scope_expansion',
+      arguments: {
+        sessionId: 'session-1',
+        idempotencyKey: 'expand-tests',
+        changeSetId: 'change-1',
+        baseMapRevision: 0,
+        requestedFiles: ['src/orders.test.ts'],
+        reason: '需要补充回归测试',
+      },
+    });
+    const result = parseResult(response.content);
+
+    expect(response.isError).toBe(false);
+    expect(result).toMatchObject({
+      accepted: true,
+      scopeExpansionRequest: {
+        changeSetId: 'change-1',
+        requestedFiles: ['src/orders.test.ts'],
+        reason: '需要补充回归测试',
+        status: 'pending',
+      },
+    });
   });
 
   it('answer_annotation 暴露结构化解释入口且不要求 ChangeSet', async () => {

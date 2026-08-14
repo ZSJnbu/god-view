@@ -24,6 +24,7 @@ Gateway 只做能力发现、调用和协议转换，不包含领域决策，也
 | `answer_annotation`                                             | 提交解释、证据与可选讲解         | 只读解释，不授予代码写权限    |
 | `request_write_access` / `propose_change`                       | 申请入口和待审批方案             | 不创建可写 ChangeSet          |
 | `start_approved_change`                                         | 使用用户签发的限时批准令牌启动   | monitored，不是强制沙箱       |
+| `request_scope_expansion`                                       | 写入新路径前申请并等待用户决定   | 不自行授权、不修改代码        |
 | `remove_node` / `remove_edge` / `complete_change`               | 更新结构墓碑并如实结束任务       | 写地图；代码由宿主 Agent 修改 |
 
 Gateway 不提供任意“写文件”工具。批准后的代码修改仍由用户已启动的 Codex/Claude

@@ -58,6 +58,7 @@ export type GatewayToolName =
   | 'request_write_access'
   | 'propose_change'
   | 'start_approved_change'
+  | 'request_scope_expansion'
   | 'remove_node'
   | 'remove_edge'
   | 'complete_change';
@@ -361,6 +362,33 @@ export class GatewaySession {
     );
   }
 
+  requestScopeExpansion(input: unknown): Promise<ToolResult> {
+    return this.#submit(
+      'request_scope_expansion',
+      input,
+      (parsed, envelope) => ({
+        ...envelope,
+        type: 'scope_expansion_requested',
+        payload: {
+          request: {
+            id: `${envelope.eventId}.scope`.slice(0, 200),
+            changeSetId: parsed.changeSetId,
+            sessionId: parsed.sessionId,
+            requestedFiles: [...parsed.requestedFiles].sort(),
+            reason: parsed.reason,
+            status: 'pending',
+            requestedAt: envelope.timestamp,
+          },
+        },
+      }),
+      (_parsed, event) => ({
+        ...(event.type === 'scope_expansion_requested'
+          ? { scopeExpansionRequest: event.payload.request }
+          : {}),
+      }),
+    );
+  }
+
   removeNode(input: unknown): Promise<ToolResult> {
     return this.#submit('remove_entity', input, (parsed, envelope) => ({
       ...envelope,
@@ -450,7 +478,7 @@ export class GatewaySession {
     resultFields?: (
       parsed: ToolInputByName[K],
       event: GodViewEvent,
-    ) => Pick<ToolResult, 'changeSetId'>,
+    ) => Pick<ToolResult, 'changeSetId' | 'scopeExpansionRequest'>,
   ): Promise<ToolResult> {
     // 先同步分支再取版本号：两者必须来自同一次读取，否则会用旧分支的版本
     // 去校验新分支的基线。

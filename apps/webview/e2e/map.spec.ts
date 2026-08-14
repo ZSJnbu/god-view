@@ -45,6 +45,60 @@ test('常驻 Agent 对话在插件内实时回复，并保留明确的修改审�
   });
 });
 
+test('Agent 写越界文件前显示扩围文件与原因，并提交专用用户决定', async ({ page }) => {
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'agent/run',
+          run: {
+            runId: 'scope-run-e2e',
+            agent: 'codex',
+            state: 'awaiting_input',
+            output: ['God View 已记录扩围申请，尚未修改新增文件。'],
+            detail: 'Agent 正在等待你的选择。',
+            restartRequired: false,
+            purpose: 'approved_change',
+            proposalId: 'proposal.orders',
+            question: {
+              question: 'Agent 需要修改批准范围外的文件，是否允许扩大本次 ChangeSet 范围？',
+              options: [
+                { id: 'approved', label: '批准并继续' },
+                { id: 'rejected', label: '拒绝扩围' },
+              ],
+              scopeExpansion: {
+                requestId: 'scope.orders-tests',
+                changeSetId: 'change.orders',
+                requestedFiles: ['src/orders.test.ts', 'src/test-helper.ts'],
+                reason: '需要补充回归测试和测试辅助函数',
+              },
+            },
+          },
+        },
+      }),
+    );
+  });
+
+  const panel = page.getByRole('region', { name: '项目 Agent 对话' });
+  await expect(panel).toContainText('需要补充回归测试和测试辅助函数');
+  await expect(panel).toContainText('src/orders.test.ts');
+  await expect(panel).toContainText('src/test-helper.ts');
+  await expect(page.getByRole('button', { name: '批准并继续' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '拒绝扩围' })).toBeVisible();
+  await page.getByRole('button', { name: '批准并继续' }).click();
+
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toContainEqual({
+    type: 'decideScopeExpansion',
+    runId: 'scope-run-e2e',
+    requestId: 'scope.orders-tests',
+    changeSetId: 'change.orders',
+    decision: 'approved',
+  });
+});
+
 test('Agent 对话可导出，并可在停靠面板与可拖动缩放浮窗间切换', async ({ page }) => {
   await page.getByLabel('发送给项目 Agent').fill('记录这次诊断');
   await page.getByRole('button', { name: '发送' }).click();

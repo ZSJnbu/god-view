@@ -141,6 +141,92 @@ describe('修改方案、用户批准与授权 ChangeSet 完整宿主链路', ()
       assert.deepEqual(service.snapshot.activeChanges.get('change.orders')?.approvedScope, [
         'src/orders/index.ts',
       ]);
+
+      const expansion: GodViewEvent = {
+        ...baseEnvelope('itest.proposal.expand-tests'),
+        baseMapRevision: service.snapshot.revision,
+        type: 'scope_expansion_requested',
+        payload: {
+          request: {
+            id: 'scope.orders-tests',
+            changeSetId: 'change.orders',
+            sessionId: 'itest-proposal',
+            requestedFiles: ['src/orders.test.ts'],
+            reason: '需要补充订单回归测试',
+            status: 'pending',
+            requestedAt: new Date().toISOString(),
+          },
+        },
+      };
+      const expansionUpdate = waiter.next(
+        (update) =>
+          update.patch.upsertedActiveChanges?.[0]?.scopeExpansionRequests?.[0]?.status ===
+          'pending',
+        'Agent 扩围申请应先进入待用户决定状态',
+      );
+      await deliver([expansion]);
+      await expansionUpdate;
+      assert.deepEqual(service.snapshot.activeChanges.get('change.orders')?.approvedScope, [
+        'src/orders/index.ts',
+      ]);
+
+      const approvedExpansionUpdate = waiter.next(
+        (update) =>
+          update.patch.upsertedActiveChanges?.[0]?.scopeExpansionRequests?.[0]?.status ===
+          'approved',
+        '宿主记录用户批准后才扩大范围',
+      );
+      assert.equal(
+        await service.decideScopeExpansion('change.orders', 'scope.orders-tests', 'approved'),
+        true,
+      );
+      await approvedExpansionUpdate;
+      assert.deepEqual(service.snapshot.activeChanges.get('change.orders')?.approvedScope, [
+        'src/orders.test.ts',
+        'src/orders/index.ts',
+      ]);
+
+      const rejectedRequest: GodViewEvent = {
+        ...baseEnvelope('itest.proposal.expand-rejected'),
+        baseMapRevision: service.snapshot.revision,
+        type: 'scope_expansion_requested',
+        payload: {
+          request: {
+            id: 'scope.orders-rejected',
+            changeSetId: 'change.orders',
+            sessionId: 'itest-proposal',
+            requestedFiles: ['src/rejected.ts'],
+            reason: '尝试修改额外辅助文件',
+            status: 'pending',
+            requestedAt: new Date().toISOString(),
+          },
+        },
+      };
+      const rejectedRequestUpdate = waiter.next(
+        (update) =>
+          update.patch.upsertedActiveChanges?.[0]?.scopeExpansionRequests?.[1]?.status ===
+          'pending',
+        '第二次扩围申请应独立等待决定',
+      );
+      await deliver([rejectedRequest]);
+      await rejectedRequestUpdate;
+      const rejectedExpansionUpdate = waiter.next(
+        (update) =>
+          update.patch.upsertedActiveChanges?.[0]?.scopeExpansionRequests?.[1]?.status ===
+          'rejected',
+        '拒绝应保留审计记录但不扩大范围',
+      );
+      assert.equal(
+        await service.decideScopeExpansion('change.orders', 'scope.orders-rejected', 'rejected'),
+        true,
+      );
+      await rejectedExpansionUpdate;
+      assert.equal(
+        service.snapshot.activeChanges
+          .get('change.orders')
+          ?.approvedScope?.includes('src/rejected.ts'),
+        false,
+      );
       const diffUpdate = waiter.next(
         (update) =>
           update.patch.upsertedActiveChanges?.[0]?.diff?.files.some(

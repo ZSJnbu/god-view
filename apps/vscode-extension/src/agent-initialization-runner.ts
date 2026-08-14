@@ -228,7 +228,12 @@ export class AgentInitializationRunner {
 
   answer(runId: string, answer: string): boolean {
     const run = this.#active;
-    if (run?.runId !== runId || run.question === undefined || run.sessionId === undefined) {
+    if (
+      run?.runId !== runId ||
+      run.question === undefined ||
+      run.question.scopeExpansion !== undefined ||
+      run.sessionId === undefined
+    ) {
       return false;
     }
     run.question = undefined;
@@ -237,6 +242,39 @@ export class AgentInitializationRunner {
     this.#launch(
       run,
       `用户对上一条问题的回答是：${answer}\n请继续完成${purposeName(run.purpose)}任务。`,
+      true,
+    );
+    return true;
+  }
+
+  answerScopeExpansion(
+    runId: string,
+    requestId: string,
+    decision: 'approved' | 'rejected',
+  ): boolean {
+    const run = this.#active;
+    const request = run?.question?.scopeExpansion;
+    if (run?.runId !== runId || request?.requestId !== requestId || run.sessionId === undefined) {
+      return false;
+    }
+    run.question = undefined;
+    const approved = decision === 'approved';
+    this.#append(
+      run,
+      approved
+        ? `用户已批准扩围：${request.requestedFiles.join(', ')}`
+        : `用户已拒绝扩围：${request.requestedFiles.join(', ')}`,
+    );
+    this.#publish(
+      run,
+      'starting',
+      approved ? '扩围已批准，正在恢复同一会话…' : '扩围已拒绝，正在恢复同一会话…',
+    );
+    this.#launch(
+      run,
+      approved
+        ? `God View 已记录用户批准。以下文件现在已加入当前 ChangeSet 的 approvedScope：${request.requestedFiles.join(', ')}。请在同一个 changeSetId 下继续实现；如还需其他文件，必须再次先调用 request_scope_expansion。`
+        : `God View 已记录用户拒绝。不得修改以下文件：${request.requestedFiles.join(', ')}。请保持原 approvedScope，调整实现方案并继续；若无法完成，请如实以 interrupted 或 failed 结束 ChangeSet。`,
       true,
     );
     return true;
@@ -281,7 +319,8 @@ export class AgentInitializationRunner {
       return [
         task,
         '',
-        '附加交互规则：这是用户已经批准范围的可写任务。必须先调用 start_approved_change，且只修改批准文件；不得扩大范围。',
+        '附加交互规则：这是用户已经批准范围的可写任务。必须先调用 start_approved_change，并记住返回的 changeSetId 与 approvedScope。',
+        '在执行 Edit、Write、重定向输出、格式化或任何可能写文件的命令之前，逐一核对目标路径。若准备修改 approvedScope 外的文件，必须先调用 request_scope_expansion，提供当前 changeSetId、最新 get_map 的 baseMapRevision、完整新增文件列表和具体原因。工具调用成功后立即结束本轮，不得先写这些文件；等待 God View 用户批准或拒绝。只有批准后恢复的同一会话才可写入新增范围，拒绝后必须保持原范围。',
         '修改代码后，必须运行方案中的验证；随后用同一 changeSetId 更新受影响的 God View 节点和关系，明确记录职责、路径、依赖与数据流变化。',
         '最后调用 complete_change。只有 complete_change 成功且最终 get_map 显示 ChangeSet 已结束，才输出且仅输出一行：',
         `${resultPrefix}{"status":"completed","proposalId":"方案 ID"}`,
@@ -458,6 +497,7 @@ export class AgentInitializationRunner {
     if (sessionId !== undefined) run.sessionId = sessionId;
     if (isFailureEvent(record)) run.failed = true;
     for (const text of extractTexts(parsed)) {
+      this.#detectScopeExpansion(run, text);
       this.#append(run, summarizeToolPayload(text));
       this.#detectQuestion(run, text);
       this.#detectResult(run, text);
@@ -465,6 +505,51 @@ export class AgentInitializationRunner {
     const progress = progressLabel(record);
     if (progress !== undefined) this.#append(run, progress);
     this.#publish(run, 'running');
+  }
+
+  #detectScopeExpansion(run: ActiveRun, text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('{')) return;
+    try {
+      const record = asRecord(JSON.parse(trimmed) as unknown);
+      const request = asRecord(record?.['scopeExpansionRequest']);
+      const requestedFiles = Array.isArray(request?.['requestedFiles'])
+        ? request['requestedFiles'].filter((path): path is string => typeof path === 'string')
+        : [];
+      if (
+        record?.['accepted'] === true &&
+        request?.['status'] === 'pending' &&
+        typeof request['id'] === 'string' &&
+        typeof request['changeSetId'] === 'string' &&
+        typeof request['reason'] === 'string' &&
+        requestedFiles.length > 0 &&
+        requestedFiles.length === (request['requestedFiles'] as unknown[]).length
+      ) {
+        run.question = {
+          question: 'Agent 需要修改批准范围外的文件，是否允许扩大本次 ChangeSet 范围？',
+          options: [
+            {
+              id: 'approved',
+              label: '批准并继续',
+              description: '把列出的文件加入本次批准范围，并恢复同一个 Agent 会话。',
+            },
+            {
+              id: 'rejected',
+              label: '拒绝扩围',
+              description: '保持原范围，Agent 不得修改这些文件。',
+            },
+          ],
+          scopeExpansion: {
+            requestId: request['id'],
+            changeSetId: request['changeSetId'],
+            requestedFiles,
+            reason: request['reason'],
+          },
+        };
+      }
+    } catch {
+      // 不是扩围工具结果，继续按普通输出处理。
+    }
   }
 
   #shouldRetryCapacityFailure(run: ActiveRun, resume: boolean): boolean {

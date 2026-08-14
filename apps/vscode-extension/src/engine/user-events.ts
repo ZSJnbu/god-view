@@ -71,3 +71,23 @@ export function interruptChangeEvent(
     payload: { changeSetId, status: 'interrupted', note: reason.slice(0, 500) },
   };
 }
+
+export function decideScopeExpansionEvent(
+  authority: EventAuthority,
+  input: {
+    readonly changeSetId: Identifier;
+    readonly requestId: Identifier;
+    readonly decision: 'approved' | 'rejected';
+  },
+): GodViewEvent {
+  return {
+    version: currentProtocolVersion,
+    ...authority.snapshot,
+    sessionId: 'god-view.user',
+    eventId: authority.eventId,
+    timestamp: authority.timestamp,
+    actor: { kind: 'user', displayName: 'VS Code user' },
+    type: 'scope_expansion_decided',
+    payload: input,
+  };
+}

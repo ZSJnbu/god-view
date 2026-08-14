@@ -25,12 +25,13 @@ describe('兼容判定', () => {
     expect(isProtocolVersionSupported('2.9', '2.4')).toBe(true);
   });
 
-  it('接受当前 major 最近两个 minor', () => {
+  it('接受当前 major 的兼容窗口', () => {
     expect(isProtocolVersionSupported('2.3', '2.4')).toBe(true);
+    expect(isProtocolVersionSupported('1.0', currentProtocolVersion)).toBe(true);
   });
 
   it('拒绝过旧的 minor', () => {
-    expect(isProtocolVersionSupported('2.0', '2.4')).toBe(false);
+    expect(isProtocolVersionSupported('2.0', '2.5')).toBe(false);
   });
 
   it('拒绝不同 major，不做宽松猜测', () => {
@@ -58,7 +59,7 @@ describe('版本协商', () => {
   it('没有兼容版本时返回 undefined，而不是猜一个', () => {
     expect(negotiateProtocolVersion(['3.0', '1.0'], '2.4')).toBeUndefined();
     expect(negotiateProtocolVersion([], '2.4')).toBeUndefined();
-    expect(negotiateProtocolVersion(['2.0'], '2.4')).toBeUndefined();
+    expect(negotiateProtocolVersion(['2.0'], '2.5')).toBeUndefined();
   });
 
   it('忽略无法解析的版本串', () => {

@@ -18,6 +18,12 @@ export function AgentConversationPanel(props: {
   readonly hasGit: boolean;
   readonly onSend: (message: string, mode: 'chat' | 'change') => void;
   readonly onAnswer: (runId: string, answer: string) => void;
+  readonly onScopeExpansionDecision: (
+    runId: string,
+    requestId: string,
+    changeSetId: string,
+    decision: 'approved' | 'rejected',
+  ) => void;
   readonly onCancel: (runId: string) => void;
   readonly paneMode: 'docked' | 'floating';
   readonly onTogglePaneMode: () => void;
@@ -97,6 +103,7 @@ export function AgentConversationPanel(props: {
           <AgentRunPanel
             run={props.run}
             onAnswer={props.onAnswer}
+            onScopeExpansionDecision={props.onScopeExpansionDecision}
             onCancel={props.onCancel}
             compact
           />
@@ -105,6 +112,7 @@ export function AgentConversationPanel(props: {
           <AgentRunPanel
             run={props.run}
             onAnswer={props.onAnswer}
+            onScopeExpansionDecision={props.onScopeExpansionDecision}
             onCancel={props.onCancel}
             compact
           />

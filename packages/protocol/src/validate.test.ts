@@ -350,6 +350,59 @@ describe('工具入参校验', () => {
     ).toBe(true);
   });
 
+  it('扩围申请必须绑定当前 ChangeSet、地图基线、文件和原因', () => {
+    const valid = {
+      sessionId: 'session-1',
+      idempotencyKey: 'expand-tests',
+      changeSetId: 'change.orders',
+      baseMapRevision: 9,
+      requestedFiles: ['src/orders.test.ts'],
+      reason: '需要增加回归测试',
+    };
+    expect(validator.validateToolInput('request_scope_expansion', valid).ok).toBe(true);
+    expect(
+      validator.validateToolInput('request_scope_expansion', {
+        ...valid,
+        baseMapRevision: undefined,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validator.validateToolInput('request_scope_expansion', {
+        ...valid,
+        requestedFiles: ['../outside.ts'],
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('接受 Agent 扩围申请与用户扩围决定事件', () => {
+    const request = {
+      id: 'scope.orders-tests',
+      changeSetId: 'change.orders',
+      sessionId: 'session-1',
+      requestedFiles: ['src/orders.test.ts'],
+      reason: '需要增加回归测试',
+      status: 'pending',
+      requestedAt: '2026-08-07T10:00:00.000Z',
+    };
+    expect(
+      validator.validateEvent({
+        ...envelope('scope_expansion_requested', { request }),
+        baseMapRevision: 9,
+        actor: { kind: 'agent' },
+      }).ok,
+    ).toBe(true);
+    expect(
+      validator.validateEvent({
+        ...envelope('scope_expansion_decided', {
+          changeSetId: request.changeSetId,
+          requestId: request.id,
+          decision: 'approved',
+        }),
+        actor: { kind: 'user' },
+      }).ok,
+    ).toBe(true);
+  });
+
   it('接受完整写入请求、方案、批准和拒绝事件', () => {
     const request = {
       id: 'request.orders',

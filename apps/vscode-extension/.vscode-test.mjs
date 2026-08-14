@@ -26,7 +26,7 @@ await cp(join(here, '..', '..', 'fixtures', 'sample-project'), join(workspace, '
  *
  * 默认下载 stable（CI 用这条路径）。在 TLS 被代理拦截、Node 无法下载的机器上，
  * 设 `GOD_VIEW_VSCODE_PATH` 指向本地已安装的可执行文件即可复用它，例如 macOS：
- *   GOD_VIEW_VSCODE_PATH="/Applications/Visual Studio Code.app/Contents/MacOS/Electron"
+ *   GOD_VIEW_VSCODE_PATH="/Applications/Visual Studio Code.app/Contents/MacOS/Code"
  */
 const localVsCode = process.env.GOD_VIEW_VSCODE_PATH;
 const requestedVersion = process.env.GOD_VIEW_VSCODE_VERSION ?? 'stable';

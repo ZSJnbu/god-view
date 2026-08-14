@@ -193,6 +193,28 @@ function parseAgentCommand(record: Record_): Result<WebviewCommand, ProtocolErro
     : invalid('answerAgentQuestion 缺少合法 answer', '/answer');
 }
 
+function parseScopeExpansionDecision(record: Record_): Result<WebviewCommand, ProtocolError> {
+  const runId = record['runId'];
+  const requestId = record['requestId'];
+  const changeSetId = record['changeSetId'];
+  const decision = record['decision'];
+  return typeof runId === 'string' &&
+    runId !== '' &&
+    typeof requestId === 'string' &&
+    requestId !== '' &&
+    typeof changeSetId === 'string' &&
+    changeSetId !== '' &&
+    ['approved', 'rejected'].includes(String(decision))
+    ? ok({
+        type: 'decideScopeExpansion',
+        runId,
+        requestId,
+        changeSetId,
+        decision: decision as 'approved' | 'rejected',
+      })
+    : invalid('decideScopeExpansion 参数非法', '/requestId');
+}
+
 function parseSendAgentMessage(record: Record_): Result<WebviewCommand, ProtocolError> {
   const agent = record['agent'];
   const message = record['message'];
@@ -305,6 +327,7 @@ export function parseWebviewCommand(input: unknown): Result<WebviewCommand, Prot
     return invalid('消息必须是对象');
   }
   const type = record['type'];
+  if (type === 'decideScopeExpansion') return parseScopeExpansionDecision(record);
   if (
     [
       'startInitialization',
@@ -313,6 +336,7 @@ export function parseWebviewCommand(input: unknown): Result<WebviewCommand, Prot
       'startAnnotationAnswer',
       'startApprovedChange',
       'answerAgentQuestion',
+      'decideScopeExpansion',
       'cancelAgentRun',
       'sendAgentMessage',
     ].includes(String(type))

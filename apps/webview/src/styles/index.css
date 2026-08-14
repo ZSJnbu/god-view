@@ -568,6 +568,30 @@ body {
   color: var(--vscode-descriptionForeground);
 }
 
+.agent-question__scope {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  background: var(--vscode-textBlockQuote-background, var(--vscode-sideBar-background));
+  border-left: 3px solid var(--vscode-notificationsWarningIcon-foreground, #cca700);
+}
+
+.agent-question__scope p,
+.agent-question__scope ul {
+  margin: 0;
+}
+
+.agent-question__scope li {
+  overflow-wrap: anywhere;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.agent-question__scope-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .empty-map button:disabled {
   cursor: not-allowed;
   opacity: 0.6;

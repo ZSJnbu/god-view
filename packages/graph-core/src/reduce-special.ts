@@ -3,6 +3,7 @@ import { domainError, type DomainError } from './domain-error.js';
 import { reduceAnnotation } from './reduce-annotation.js';
 import { reduceChangeObserved } from './reduce-change-observed.js';
 import { reduceProposal } from './reduce-proposal.js';
+import { reduceScopeExpansion } from './reduce-scope-expansion.js';
 import type { GraphSnapshot } from './snapshot.js';
 
 type ReduceResult = Result<GraphSnapshot, DomainError>;
@@ -12,6 +13,7 @@ type Commit = (
   mutation: {
     readonly completedChanges?: GraphSnapshot['completedChanges'];
     readonly annotations?: GraphSnapshot['annotations'];
+    readonly activeChanges?: GraphSnapshot['activeChanges'];
     readonly bumpsRevision: boolean;
   },
 ) => GraphSnapshot;
@@ -39,6 +41,29 @@ function isProposalEvent(
   ].includes(event.type);
 }
 
+function isObservedOrScopeEvent(
+  event: GodViewEvent,
+): event is Extract<
+  GodViewEvent,
+  { type: 'change_observed' | 'scope_expansion_requested' | 'scope_expansion_decided' }
+> {
+  return ['change_observed', 'scope_expansion_requested', 'scope_expansion_decided'].includes(
+    event.type,
+  );
+}
+
+function reduceObservedOrScopeEvent(
+  snapshot: GraphSnapshot,
+  event: Extract<
+    GodViewEvent,
+    { type: 'change_observed' | 'scope_expansion_requested' | 'scope_expansion_decided' }
+  >,
+): ReduceResult {
+  return event.type === 'change_observed'
+    ? reduceChangeObserved(snapshot, event)
+    : reduceScopeExpansion(snapshot, event);
+}
+
 export function reduceSpecialEvent(
   snapshot: GraphSnapshot,
   event: GodViewEvent,
@@ -46,7 +71,7 @@ export function reduceSpecialEvent(
 ): ReduceResult | undefined {
   if (isAnnotationEvent(event)) return reduceAnnotation(snapshot, event);
   if (isProposalEvent(event)) return reduceProposal(snapshot, event);
-  if (event.type === 'change_observed') return reduceChangeObserved(snapshot, event);
+  if (isObservedOrScopeEvent(event)) return reduceObservedOrScopeEvent(snapshot, event);
   if (event.type !== 'change_reviewed') return undefined;
   if (event.actor?.kind !== 'user')
     return err(domainError(errorCodes.UNSUPPORTED, '只有用户可以接受 ChangeSet 结果'));
@@ -61,7 +86,9 @@ export function reduceSpecialEvent(
     );
   if (
     event.payload.status === 'accepted' &&
-    completed.diff.files.some((file) => file.scopeStatus === 'outside_scope')
+    completed.diff.files.some(
+      (file) => file.scopeStatus === 'outside_scope' && file.attribution !== 'preexisting_overlap',
+    )
   )
     return err(
       domainError(

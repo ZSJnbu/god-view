@@ -2,6 +2,13 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.29 - 2026-08-14
+
+- Adds pre-write scope expansion requests for managed Codex and Claude editing runs. The Agent must list new files and a reason, then stop before writing them.
+- Shows a dedicated approve/reject card in the project Agent conversation. The Extension Host records the user decision and expands the authoritative ChangeSet scope before resuming the same CLI session.
+- Prevents Agent-authored or post-write approval from widening scope, preserves request/decision audit history, and keeps rejected files outside the approved scope.
+- Stops treating task-preexisting out-of-scope changes alone as a new Agent scope violation while retaining their `preexisting_overlap` Diff attribution.
+
 ## 0.3.28 - 2026-08-14
 
 - Allows project-level change requests directly from Agent chat without requiring the user to select a map node first.

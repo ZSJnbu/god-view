@@ -1,7 +1,7 @@
 import type { ProtocolVersion } from './generated/protocol-types.js';
 
 /** 当前实现的协议版本。 */
-export const currentProtocolVersion = '1.3' as ProtocolVersion;
+export const currentProtocolVersion = '1.4' as ProtocolVersion;
 
 /**
  * 兼容策略（TECHNICAL_ARCHITECTURE.md §6.2）：
@@ -9,7 +9,7 @@ export const currentProtocolVersion = '1.3' as ProtocolVersion;
  * - 至少支持当前 major 的最近两个 minor；
  * - 读取方忽略未知可选字段，写入方只发送协商版本支持的字段。
  */
-export const supportedMinorRange = 4;
+export const supportedMinorRange = 5;
 
 interface ParsedVersion {
   readonly major: number;

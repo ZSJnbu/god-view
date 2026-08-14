@@ -119,6 +119,73 @@ describe('AgentInitializationRunner', () => {
     });
   });
 
+  it('从扩围工具权威返回生成审批卡片，批准后恢复同一个 Codex 会话', async () => {
+    const first = fakeProcess();
+    const resumed = fakeProcess();
+    const updates: AgentRunView[] = [];
+    const spawnProcess = vi
+      .fn()
+      .mockReturnValueOnce(first.child)
+      .mockReturnValueOnce(resumed.child);
+    const runner = new AgentInitializationRunner({
+      workspaceRoot: '/repo',
+      task: () => '地图任务',
+      approvedChangeTask: () => '执行批准方案',
+      authorize: () => Promise.resolve(true),
+      onUpdate: (run) => updates.push(run),
+      spawnProcess,
+    });
+
+    await runner.start('codex', 'approved_change', 'proposal.orders');
+    first.stdout.write(
+      `${JSON.stringify({ type: 'thread.started', thread_id: 'thread-approved' })}\n`,
+    );
+    first.stdout.write(
+      `${JSON.stringify({
+        type: 'item.completed',
+        text: JSON.stringify({
+          accepted: true,
+          mapRevision: 12,
+          errors: [],
+          scopeExpansionRequest: {
+            id: 'scope.orders-tests',
+            changeSetId: 'change.orders',
+            sessionId: 'agent.session',
+            requestedFiles: ['src/orders.test.ts'],
+            reason: '需要补充回归测试',
+            status: 'pending',
+            requestedAt: '2026-08-14T01:00:00.000Z',
+          },
+        }),
+      })}\n`,
+    );
+    first.close(0);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(updates.at(-1)).toMatchObject({
+      state: 'awaiting_input',
+      question: {
+        scopeExpansion: {
+          requestId: 'scope.orders-tests',
+          changeSetId: 'change.orders',
+          requestedFiles: ['src/orders.test.ts'],
+          reason: '需要补充回归测试',
+        },
+      },
+    });
+    const runId = updates.at(-1)?.runId ?? '';
+    expect(runner.answer(runId, 'approved')).toBe(false);
+    expect(spawnProcess).toHaveBeenCalledTimes(1);
+    expect(runner.answerScopeExpansion(runId, 'scope.orders-tests', 'approved')).toBe(true);
+    const resumeCall = spawnProcess.mock.calls[1] as unknown as [string, string[]];
+    expect(resumeCall[1]).toEqual(
+      expect.arrayContaining(['exec', 'resume', '--json', 'thread-approved']),
+    );
+    expect(resumeCall[1].at(-1)).toContain('src/orders.test.ts');
+    expect(updates.at(-1)).toMatchObject({ state: 'running', detail: 'Agent 已恢复，继续执行…' });
+    runner.dispose();
+  });
+
   it('标注解释使用持久标注任务并在进度中绑定 annotationId', async () => {
     const process = fakeProcess();
     const updates: AgentRunView[] = [];
