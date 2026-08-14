@@ -2,6 +2,12 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.37 - 2026-08-14
+
+- Fixes native Agent actions that appeared clickable but only refreshed status when the selected CLI was installed but not configured.
+- Makes both the Agent header and approved-change continuation explicitly start workspace Agent configuration, then reflect the ready state.
+- Adds browser regression coverage for the installed-but-unconfigured Codex flow shown by the affected UI state.
+
 ## 0.3.36 - 2026-08-14
 
 - Replaces the separate in-extension Agent runner and transcript with official Codex/Claude terminal sessions, preserving native permissions, questions, history and recovery.

@@ -2,7 +2,7 @@
 
 让 Agent 在写代码的同时维护项目地图，让开发者实时看见项目如何被构建。
 
-> **当前阶段：0.3.36 本地发布候选版。**
+> **当前阶段：0.3.37 本地发布候选版。**
 > 持续建图、GuidedStory、原位解释、修改方案、用户批准、monitored ChangeSet、
 > Git Diff 摘要与用户验收已形成闭环，并由单元、Chromium 和 Extension Host 自动化覆盖。
 > 扩展未发布到 Marketplace。当前 VSIX 已内置 `god-view` Gateway/CLI，安装后可通过
