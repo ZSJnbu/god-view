@@ -19,6 +19,7 @@ export interface AnnotationThreadsProps {
   readonly activeChanges: readonly ActiveChange[];
   readonly completedChanges: readonly CompletedChange[];
   readonly hasGit: boolean;
+  readonly agentReady: boolean;
   readonly onOpenSource: (path: string, startLine?: number) => void;
   readonly onResolve: (annotationId: Identifier) => void;
   readonly onStartAnswer: (annotationId: Identifier) => void;
@@ -53,6 +54,7 @@ function AnnotationThreadCard({
   activeChanges,
   completedChanges,
   hasGit,
+  agentReady,
   onOpenSource,
   onResolve,
   onStartAnswer,
@@ -117,7 +119,7 @@ function AnnotationThreadCard({
                 onStartAnswer(annotation.id);
               }}
             >
-              发送到原生 Agent 回答
+              {agentReady ? '发送到原生 Agent 回答' : '配置 Agent 后回答'}
             </button>
             <button
               type="button"
@@ -156,6 +158,7 @@ function AnnotationThreadCard({
             activeChanges={activeChanges}
             completedChanges={completedChanges}
             hasGit={hasGit}
+            agentReady={agentReady}
             onApprove={onApproveProposal}
             onStart={onStartApprovedChange}
             onReject={onRejectProposal}
@@ -183,6 +186,7 @@ export function ProposalReview({
   activeChanges,
   completedChanges,
   hasGit,
+  agentReady,
   onApprove,
   onStart,
   onReject,
@@ -192,6 +196,7 @@ export function ProposalReview({
   readonly activeChanges: readonly ActiveChange[];
   readonly completedChanges: readonly CompletedChange[];
   readonly hasGit: boolean;
+  readonly agentReady: boolean;
   readonly onApprove: AnnotationThreadsProps['onApproveProposal'];
   readonly onStart: AnnotationThreadsProps['onStartApprovedChange'];
   readonly onReject: AnnotationThreadsProps['onRejectProposal'];
@@ -319,7 +324,7 @@ export function ProposalReview({
                 onStart(proposal.id);
               }}
             >
-              发送到原生 Agent 继续
+              {agentReady ? '发送到原生 Agent 继续' : '配置 Agent 后继续'}
             </button>
             <button
               type="button"

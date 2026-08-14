@@ -79,6 +79,17 @@ export function App({
     messenger.send({ type: 'refreshAgentStatus' });
   }, [messenger]);
 
+  const requestAgentConfiguration = useCallback(() => {
+    const candidate =
+      state.agents.find((item) => item.agent === state.selectedAgent && item.installed) ??
+      state.agents.find((item) => item.installed);
+    if (candidate === undefined) {
+      refreshAgentStatus();
+      return;
+    }
+    messenger.send({ type: 'configureAgent', agent: candidate.agent });
+  }, [messenger, refreshAgentStatus, state.agents, state.selectedAgent]);
+
   const topologicalSort = useCallback(() => {
     if (topologicalSortBusy) return;
     setTopologicalSortBusy(true);
@@ -140,11 +151,7 @@ export function App({
               (item) => item.agent === state.selectedAgent && item.configuration === 'current',
             ) ?? state.agents.find((item) => item.configuration === 'current');
           if (agent === undefined) {
-            const candidate =
-              state.agents.find((item) => item.agent === state.selectedAgent && item.installed) ??
-              state.agents.find((item) => item.installed);
-            if (candidate === undefined) messenger.send({ type: 'refreshAgentStatus' });
-            else messenger.send({ type: 'configureAgent', agent: candidate.agent });
+            requestAgentConfiguration();
             return;
           }
           messenger.send({ type: 'startMapCompletion', agent: agent.agent, target });
@@ -157,11 +164,7 @@ export function App({
               (item) => item.agent === state.selectedAgent && item.configuration === 'current',
             ) ?? state.agents.find((item) => item.configuration === 'current');
           if (agent === undefined) {
-            const candidate =
-              state.agents.find((item) => item.agent === state.selectedAgent && item.installed) ??
-              state.agents.find((item) => item.installed);
-            if (candidate === undefined) messenger.send({ type: 'refreshAgentStatus' });
-            else messenger.send({ type: 'configureAgent', agent: candidate.agent });
+            requestAgentConfiguration();
             return;
           }
           messenger.send({ type: 'startReinitialization', agent: agent.agent });
@@ -202,7 +205,7 @@ export function App({
                   (item) => item.agent === state.selectedAgent && item.configuration === 'current',
                 ) ?? state.agents.find((item) => item.configuration === 'current');
               if (agent === undefined) {
-                messenger.send({ type: 'refreshAgentStatus' });
+                requestAgentConfiguration();
                 return;
               }
               messenger.send({ type: 'startAnnotationAnswer', annotationId, agent: agent.agent });
@@ -231,7 +234,7 @@ export function App({
                   (item) => item.agent === state.selectedAgent && item.configuration === 'current',
                 ) ?? state.agents.find((item) => item.configuration === 'current');
               if (agent === undefined) {
-                messenger.send({ type: 'refreshAgentStatus' });
+                requestAgentConfiguration();
                 return;
               }
               messenger.send({ type: 'startApprovedChange', proposalId, agent: agent.agent });
@@ -317,14 +320,14 @@ export function App({
         hasGit={state.map.capabilities?.hasGit ?? false}
         onOpenAgent={() => {
           if (configuredAgent === undefined) {
-            messenger.send({ type: 'refreshAgentStatus' });
+            requestAgentConfiguration();
             return;
           }
           messenger.send({ type: 'openAgentTerminal', agent: configuredAgent.agent });
         }}
         onSend={(message, mode) => {
           if (configuredAgent === undefined) {
-            messenger.send({ type: 'refreshAgentStatus' });
+            requestAgentConfiguration();
             return;
           }
           messenger.send({
@@ -352,7 +355,7 @@ export function App({
         }}
         onStartApprovedChange={(proposalId) => {
           if (configuredAgent === undefined) {
-            messenger.send({ type: 'refreshAgentStatus' });
+            requestAgentConfiguration();
             return;
           }
           messenger.send({

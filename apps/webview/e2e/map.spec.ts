@@ -48,6 +48,117 @@ test('原生 Agent 入口把对话和权限留在官方终端，并保留修改�
   });
 });
 
+test('Agent 已安装但未配置时，顶部入口和已批准方案都能发起配置', async ({ page }) => {
+  await page.evaluate(() => {
+    const harness = window as unknown as {
+      __godViewSnapshot: { document: { revision: number; changeProposals: unknown[] } };
+    };
+    const proposal = {
+      id: 'proposal.configure-agent',
+      annotationId: 'annotation.configure-agent',
+      requestId: 'request.configure-agent',
+      status: 'approved',
+      summary: '配置 Agent 后继续执行已批准方案',
+      plannedFiles: ['src/orders/index.ts'],
+      structuralChanges: ['更新订单模块'],
+      risks: [],
+      validationPlan: ['运行回归测试'],
+      branchKey: 'main',
+      baseMapRevision: 3,
+      baseGitRevision: 'head-e2e',
+      createdAt: '2026-08-14T00:00:00.000Z',
+      approval: {
+        token: 'approval-configure-agent',
+        approvedScope: ['src/orders/index.ts'],
+        permissionMode: 'monitored',
+        approvedAt: '2026-08-14T00:01:00.000Z',
+        expiresAt: '2099-08-14T00:16:00.000Z',
+        branchKey: 'main',
+        mapRevision: 4,
+        gitRevision: 'head-e2e',
+        preexistingChanges: [],
+      },
+    };
+    harness.__godViewSnapshot.document.changeProposals = [proposal];
+    harness.__godViewSnapshot.document.revision += 1;
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'map/patch',
+          revision: harness.__godViewSnapshot.document.revision,
+          factsRevision: 1,
+          patch: {
+            upsertedNodes: [],
+            upsertedEdges: [],
+            removedNodeIds: [],
+            removedEdgeIds: [],
+            upsertedChangeProposals: [proposal],
+          },
+          drift: [],
+        },
+      }),
+    );
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'agent/status',
+          selectedAgent: 'codex',
+          agents: [
+            {
+              agent: 'codex',
+              displayName: 'Codex CLI',
+              installed: true,
+              version: 'codex-cli 0.147.0',
+              configuration: 'missing',
+              workspaceRoot: '/repo',
+              detail: '尚未完整配置当前工作区的 MCP 与上下文 hook。',
+            },
+          ],
+        },
+      }),
+    );
+  });
+
+  const panel = page.getByRole('region', { name: '原生项目 Agent' });
+  const approval = page.getByRole('region', { name: '等待批准并实现' });
+  await expect(panel).toContainText('Codex 原生会话尚未配置');
+  await expect(approval.getByRole('button', { name: '配置 Agent 后继续' })).toBeEnabled();
+
+  await panel.getByRole('button', { name: '配置 Agent', exact: true }).click();
+  await expect(panel.getByRole('button', { name: '打开 / 聚焦终端' })).toBeVisible();
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'agent/status',
+          selectedAgent: 'codex',
+          agents: [
+            {
+              agent: 'codex',
+              displayName: 'Codex CLI',
+              installed: true,
+              configuration: 'missing',
+              workspaceRoot: '/repo',
+            },
+          ],
+        },
+      }),
+    );
+  });
+  await approval.getByRole('button', { name: '配置 Agent 后继续' }).click();
+
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(
+    commands.filter(
+      (command) =>
+        JSON.stringify(command) === JSON.stringify({ type: 'configureAgent', agent: 'codex' }),
+    ),
+  ).toHaveLength(2);
+});
+
 test('原生 Agent 提交方案后，批准、执行、画布更新与 Diff 验收形成完整闭环', async ({ page }) => {
   await page.getByRole('checkbox', { name: '作为修改请求（先形成 God View 方案）' }).check();
   await page.getByLabel('发送给原生项目 Agent').fill('继续处理');

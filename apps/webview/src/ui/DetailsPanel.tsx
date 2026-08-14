@@ -101,6 +101,7 @@ export function DetailsPanel({
           )}
           requests={[...state.map.writeAccessRequests.values()]}
           proposals={[...state.map.changeProposals.values()]}
+          agentReady={state.agents.some((item) => item.configuration === 'current')}
           onOpenSource={onOpenSource}
           onCreateAnnotation={onCreateAnnotation}
           onResolveAnnotation={onResolveAnnotation}
@@ -122,6 +123,7 @@ function NodeDetails({
   annotations,
   requests,
   proposals,
+  agentReady,
   onOpenSource,
   onCreateAnnotation,
   onResolveAnnotation,
@@ -137,6 +139,7 @@ function NodeDetails({
   readonly annotations: readonly AnnotationThread[];
   readonly requests: readonly WriteAccessRequest[];
   readonly proposals: readonly ChangeProposal[];
+  readonly agentReady: boolean;
   readonly onOpenSource: (path: string, startLine?: number) => void;
   readonly onCreateAnnotation: DetailsPanelProps['onCreateAnnotation'];
   readonly onResolveAnnotation: DetailsPanelProps['onResolveAnnotation'];
@@ -196,6 +199,7 @@ function NodeDetails({
         activeChanges={[...store.getState().map.activeChanges.values()]}
         completedChanges={[...store.getState().map.completedChanges.values()]}
         hasGit={store.getState().map.capabilities?.hasGit ?? false}
+        agentReady={agentReady}
         onOpenSource={onOpenSource}
         onResolve={onResolveAnnotation}
         onStartAnswer={onStartAnnotationAnswer}

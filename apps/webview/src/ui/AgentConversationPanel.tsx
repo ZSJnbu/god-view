@@ -60,13 +60,8 @@ export function AgentConversationPanel(props: {
           {props.selectedNode !== undefined && (
             <span className="agent-conversation__context">上下文：{props.selectedNode.label}</span>
           )}
-          <button
-            className="chip"
-            type="button"
-            onClick={props.onOpenAgent}
-            disabled={props.agent === undefined}
-          >
-            打开 / 聚焦终端
+          <button className="chip" type="button" onClick={props.onOpenAgent}>
+            {props.agent === undefined ? '配置 Agent' : '打开 / 聚焦终端'}
           </button>
           <button className="chip" type="button" onClick={props.onTogglePaneMode}>
             {props.paneMode === 'docked' ? '浮动窗口' : '停靠底部'}
@@ -98,6 +93,7 @@ export function AgentConversationPanel(props: {
               activeChanges={props.activeChanges}
               completedChanges={props.completedChanges}
               hasGit={props.hasGit}
+              agentReady={props.agent !== undefined}
               onApprove={props.onApproveProposal}
               onStart={props.onStartApprovedChange}
               onReject={props.onRejectProposal}
