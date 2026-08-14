@@ -313,6 +313,8 @@ export function App({
               })()
         }
         proposals={[...state.map.changeProposals.values()]}
+        activeChanges={[...state.map.activeChanges.values()]}
+        completedChanges={[...state.map.completedChanges.values()]}
         hasGit={state.map.capabilities?.hasGit ?? false}
         onSend={(message, mode) => {
           if (configuredAgent === undefined) {

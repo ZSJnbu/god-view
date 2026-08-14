@@ -766,6 +766,98 @@ test('Diff 可打开原生比较并由用户验收，越界结果只能带问题
   );
 });
 
+test('失败方案显示真实原因，并且只能通过重新批准来重试', async ({ page }) => {
+  await page.evaluate(() => {
+    const harness = window as unknown as {
+      __godViewSnapshot: {
+        document: {
+          revision: number;
+          changeProposals: unknown[];
+          completedChanges: unknown[];
+        };
+      };
+    };
+    const proposal = {
+      id: 'proposal.retry',
+      annotationId: 'annotation.retry',
+      requestId: 'request.retry',
+      status: 'approved',
+      summary: '重新执行博客修改',
+      plannedFiles: ['src/retry.ts'],
+      structuralChanges: [],
+      risks: [],
+      validationPlan: ['运行测试'],
+      branchKey: 'main',
+      baseMapRevision: 3,
+      baseGitRevision: 'head-e2e',
+      createdAt: '2026-08-11T00:00:00.000Z',
+      approval: {
+        token: 'approval-old',
+        approvedScope: ['src/retry.ts'],
+        permissionMode: 'monitored',
+        approvedAt: '2026-08-11T00:01:00.000Z',
+        expiresAt: '2026-08-11T00:16:00.000Z',
+        branchKey: 'main',
+        mapRevision: 4,
+        gitRevision: 'head-e2e',
+        preexistingChanges: [],
+      },
+    };
+    const failed = {
+      changeSetId: 'change.retry.failed',
+      proposalId: 'proposal.retry',
+      status: 'failed',
+      completedAt: '2026-08-11T00:10:00.000Z',
+      plannedFiles: ['src/retry.ts'],
+      actualFiles: ['src/retry.ts'],
+      diff: {
+        files: [],
+        additions: 0,
+        deletions: 0,
+        computedAt: '2026-08-11T00:10:00.000Z',
+        contentHash: 'f'.repeat(64),
+      },
+      note: '测试失败：src/retry.ts 没有通过回归验证。',
+    };
+    harness.__godViewSnapshot.document.changeProposals = [proposal];
+    harness.__godViewSnapshot.document.completedChanges = [failed];
+    harness.__godViewSnapshot.document.revision += 1;
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'map/patch',
+          revision: harness.__godViewSnapshot.document.revision,
+          factsRevision: 1,
+          patch: {
+            upsertedNodes: [],
+            upsertedEdges: [],
+            removedNodeIds: [],
+            removedEdgeIds: [],
+            upsertedChangeProposals: [proposal],
+            upsertedCompletedChanges: [failed],
+          },
+          drift: [],
+        },
+      }),
+    );
+  });
+
+  const approval = page.getByRole('region', { name: '等待批准并实现' });
+  await expect(approval).toContainText('上次执行未成功，需要你决定是否重试');
+  await expect(approval).toContainText('测试失败：src/retry.ts 没有通过回归验证。');
+  await expect(approval.getByRole('button', { name: '启动内部编辑 Agent' })).toHaveCount(0);
+  await approval.getByRole('button', { name: '重新批准并重试' }).click();
+  const commands = await page.evaluate(
+    () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
+  );
+  expect(commands).toContainEqual({
+    type: 'approveProposal',
+    proposalId: 'proposal.retry',
+    approvedScope: ['src/retry.ts'],
+    autoStartAgent: 'codex',
+  });
+});
+
 test('活动 ChangeSet 可由用户停止并保留当前 Diff', async ({ page }) => {
   await page.evaluate(() => {
     const timestamp = '2026-08-11T00:00:00.000Z';

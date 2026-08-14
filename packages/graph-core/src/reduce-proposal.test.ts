@@ -284,6 +284,65 @@ describe('修改方案与批准状态机', () => {
     ).toBe(false);
   });
 
+  it('失败或令牌过期后允许用户重新批准，但活动中或成功后禁止重复批准', () => {
+    const plan = proposed();
+    const approved = apply(plan, approvalEvent(plan.revision));
+    const failedChanges = new Map(approved.completedChanges);
+    const failedChange = {
+      changeSetId: 'change.failed',
+      proposalId: 'proposal.change',
+      status: 'failed' as const,
+      completedAt: '2026-08-12T02:16:00.000Z',
+      plannedFiles: ['src/orders.ts'],
+      actualFiles: ['src/orders.ts'],
+      diff: {
+        files: [],
+        additions: 0,
+        deletions: 0,
+        computedAt: '2026-08-12T02:16:00.000Z',
+        contentHash: 'f'.repeat(64),
+      },
+    };
+    failedChanges.set('change.failed', failedChange);
+    const failed = { ...approved, completedChanges: failedChanges };
+    const retry = approvalEvent(failed.revision);
+    if (retry.type !== 'change_approved') throw new Error('test event type');
+    const retried = apply(failed, {
+      ...retry,
+      timestamp: '2026-08-12T02:20:00.000Z',
+      payload: {
+        ...retry.payload,
+        approval: {
+          ...retry.payload.approval,
+          token: 'approval-retry',
+          approvedAt: '2026-08-12T02:20:00.000Z',
+          expiresAt: '2026-08-12T02:35:00.000Z',
+        },
+      },
+    });
+    expect(retried.changeProposals.get('proposal.change')?.approval?.token).toBe('approval-retry');
+
+    const successfulChanges = new Map(approved.completedChanges);
+    successfulChanges.set('change.success', {
+      ...failedChange,
+      changeSetId: 'change.success',
+      status: 'pending_review',
+    });
+    expect(reduce({ ...approved, completedChanges: successfulChanges }, retry).ok).toBe(false);
+
+    const activeChanges = new Map(approved.activeChanges);
+    activeChanges.set('change.active', {
+      changeSetId: 'change.active',
+      sessionId: 'agent',
+      intent: '执行中',
+      startedAt: now,
+      proposalId: 'proposal.change',
+      touchedNodeIds: [],
+      touchedEdgeIds: [],
+    });
+    expect(reduce({ ...approved, activeChanges }, retry).ok).toBe(false);
+  });
+
   it('拒绝陈旧方案、错误令牌、过期令牌和批准后的额外地图事件', () => {
     const requested = apply(seeded(), requestEvent());
     expect(reduce(requested, proposalEvent(requested.revision - 1)).ok).toBe(false);

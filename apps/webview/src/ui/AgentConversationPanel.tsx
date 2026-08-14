@@ -4,9 +4,16 @@ import type {
   AgentRunView,
   ConfigurableAgent,
 } from '@god-view/webview-bridge';
-import type { ChangeProposal, Identifier, WorkspacePath } from '@god-view/protocol';
+import type {
+  ActiveChange,
+  ChangeProposal,
+  CompletedChange,
+  Identifier,
+  WorkspacePath,
+} from '@god-view/protocol';
 import { AgentRunPanel } from './AgentRunPanel.js';
 import { ProposalReview } from './AnnotationThreads.js';
+import { proposalExecutionState, proposalRemainsActionable } from './proposal-execution.js';
 
 // eslint-disable-next-line complexity -- one conversation surface intentionally exposes all live Agent states.
 export function AgentConversationPanel(props: {
@@ -15,6 +22,8 @@ export function AgentConversationPanel(props: {
   readonly agent: ConfigurableAgent | undefined;
   readonly selectedNode: { readonly id: string; readonly label: string } | undefined;
   readonly proposals: readonly ChangeProposal[];
+  readonly activeChanges: readonly ActiveChange[];
+  readonly completedChanges: readonly CompletedChange[];
   readonly hasGit: boolean;
   readonly onSend: (message: string, mode: 'chat' | 'change') => void;
   readonly onAnswer: (runId: string, answer: string) => void;
@@ -43,7 +52,16 @@ export function AgentConversationPanel(props: {
   const messages = props.conversation?.messages ?? [];
   const hasQuestion = props.run?.question !== undefined && props.run.state === 'awaiting_input';
   const showTask = props.run !== undefined && props.run.purpose !== 'project_chat';
-  const actionableProposal = latestActionableProposal(props.proposals);
+  const actionableProposal = latestActionableProposal(props.proposals, props.completedChanges);
+  const actionableState =
+    actionableProposal === undefined
+      ? undefined
+      : proposalExecutionState(
+          actionableProposal,
+          props.activeChanges,
+          props.completedChanges,
+          Date.now(),
+        );
   useEffect(() => {
     const element = transcriptRef.current;
     if (element !== null) element.scrollTop = element.scrollHeight;
@@ -120,11 +138,13 @@ export function AgentConversationPanel(props: {
         {actionableProposal !== undefined && (
           <section className="agent-conversation__approval" aria-label="等待批准并实现">
             <header>
-              <strong>方案已准备好，等待你批准后实现</strong>
-              <span>Agent 还没有修改代码</span>
+              <strong>{approvalHeading(actionableState?.kind)}</strong>
+              <span>{approvalSubheading(actionableState?.kind)}</span>
             </header>
             <ProposalReview
               proposal={actionableProposal}
+              activeChanges={props.activeChanges}
+              completedChanges={props.completedChanges}
               hasGit={props.hasGit}
               onApprove={props.onApproveProposal}
               onStart={props.onStartApprovedChange}
@@ -195,11 +215,30 @@ export function AgentConversationPanel(props: {
   );
 }
 
+function approvalHeading(kind: ReturnType<typeof proposalExecutionState>['kind'] | undefined) {
+  return {
+    proposed: '方案已准备好，等待你批准后实现',
+    ready: '方案已批准，可以启动内部编辑 Agent',
+    expired: '批准已过期，需要你重新批准',
+    active: '方案正在执行',
+    retryable: '上次执行未成功，需要你决定是否重试',
+    completed: '方案已经执行完成',
+  }[kind ?? 'proposed'];
+}
+
+function approvalSubheading(kind: ReturnType<typeof proposalExecutionState>['kind'] | undefined) {
+  if (kind === 'retryable') return '已有代码改动和失败记录都会保留，不会静默当作成功';
+  if (kind === 'active') return '正在等待 Agent 写入并同步权威地图';
+  if (kind === 'expired') return '插件不会自动续签写权限';
+  return kind === 'proposed' ? 'Agent 还没有修改代码' : '执行状态以 ChangeSet 记录为准';
+}
+
 function latestActionableProposal(
   proposals: readonly ChangeProposal[],
+  completedChanges: readonly CompletedChange[],
 ): ChangeProposal | undefined {
   return [...proposals]
-    .filter((proposal) => proposal.status === 'proposed' || proposal.status === 'approved')
+    .filter((proposal) => proposalRemainsActionable(proposal, completedChanges))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
 }
 

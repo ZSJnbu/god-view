@@ -34,6 +34,7 @@ import {
 import { purposeForCommand } from './agent-command-purpose.js';
 import {
   formatApprovedChangeTask,
+  approvedChangeStartIssue,
   isAgentCommand,
   isAnnotationOrProposalCommand,
   isChangeCommand,
@@ -431,13 +432,13 @@ export class MapPanel {
   }
 
   async #startApprovedChange(agent: 'codex' | 'claude-code', proposalId: string): Promise<void> {
-    const proposal = this.#service.snapshot.changeProposals.get(proposalId);
-    if (proposal?.status !== 'approved' || proposal.approval === undefined) {
-      this.#post({
-        type: 'error',
-        code: 'PROPOSAL_NOT_APPROVED',
-        message: '方案尚未批准、已经失效或授权已被使用',
-      });
+    const issue = approvedChangeStartIssue(
+      this.#service.snapshot,
+      proposalId,
+      this.#agentRunner.timestamp(),
+    );
+    if (issue !== undefined) {
+      this.#post({ type: 'error', ...issue });
       return;
     }
     const started = await this.#agentRunner.start(agent, 'approved_change', proposalId);

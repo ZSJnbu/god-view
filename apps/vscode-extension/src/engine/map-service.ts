@@ -309,18 +309,19 @@ export class MapService {
       if (repository === undefined) return;
       const gitState = await this.#git.read();
       this.#gitState = gitState;
+      const approvedAt = this.#options.now();
       const prepared = prepareApproval({
         snapshot: repository.snapshot,
         gitState,
         proposalId,
         approvedScope,
         acknowledgePreexistingChanges,
+        now: approvedAt,
       });
       if (isApprovalFailure(prepared)) {
         outcome = prepared;
         return;
       }
-      const approvedAt = this.#options.now();
       const token = `approval.${randomBytes(16).toString('hex')}`.slice(0, 200);
       const event: GodViewEvent = {
         version: currentProtocolVersion,

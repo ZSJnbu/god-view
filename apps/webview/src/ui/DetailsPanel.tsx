@@ -196,6 +196,8 @@ function NodeDetails({
         annotations={annotations}
         requests={requests}
         proposals={proposals}
+        activeChanges={[...store.getState().map.activeChanges.values()]}
+        completedChanges={[...store.getState().map.completedChanges.values()]}
         hasGit={store.getState().map.capabilities?.hasGit ?? false}
         onOpenSource={onOpenSource}
         onResolve={onResolveAnnotation}

@@ -1,4 +1,5 @@
 import type { ChangeProposal, GraphNode, Identifier } from '@god-view/protocol';
+import type { GraphSnapshot } from '@god-view/graph-core';
 import type { WebviewCommand } from '@god-view/webview-bridge';
 
 const maximumProjectChangeContextNodes = 20;
@@ -106,7 +107,8 @@ export function formatApprovedChangeTask(proposal: ChangeProposal): string {
     JSON.stringify(
       {
         sessionId: 'god-view-approved-change',
-        idempotencyKey: `start-${proposal.id}`,
+        // 每次重新批准都有新 token，也必须产生新的 change_start 事件；不能复用旧方案键。
+        idempotencyKey: `start-${approval.token}`,
         proposalId: proposal.id,
         approvalToken: approval.token,
       },
@@ -120,4 +122,73 @@ export function formatApprovedChangeTask(proposal: ChangeProposal): string {
     `授权到期：${approval.expiresAt}`,
     '启动成功后，在所有地图写事件中携带返回的 changeSetId；不要修改批准范围外的文件。',
   ].join('\n');
+}
+
+export interface ApprovedChangeStartIssue {
+  readonly code:
+    | 'PROPOSAL_NOT_APPROVED'
+    | 'CHANGE_SET_ACTIVE'
+    | 'PROPOSAL_REAPPROVAL_REQUIRED'
+    | 'PROPOSAL_ALREADY_EXECUTED';
+  readonly message: string;
+}
+
+export function approvedChangeStartIssue(
+  snapshot: Pick<
+    GraphSnapshot,
+    | 'revision'
+    | 'branchKey'
+    | 'baseGitRevision'
+    | 'changeProposals'
+    | 'activeChanges'
+    | 'completedChanges'
+  >,
+  proposalId: Identifier,
+  now: string,
+): ApprovedChangeStartIssue | undefined {
+  const proposal = snapshot.changeProposals.get(proposalId);
+  if (proposal?.status !== 'approved' || proposal.approval === undefined) {
+    return {
+      code: 'PROPOSAL_NOT_APPROVED',
+      message: '方案尚未批准、已经失效或授权已被使用。',
+    };
+  }
+  const approval = proposal.approval;
+  const active = [...snapshot.activeChanges.values()].find(
+    (change) => change.proposalId === proposalId,
+  );
+  if (active !== undefined) {
+    return {
+      code: 'CHANGE_SET_ACTIVE',
+      message: `该方案已经在执行（${active.changeSetId}），不能重复启动。`,
+    };
+  }
+  const completed = [...snapshot.completedChanges.values()]
+    .filter(
+      (change) => change.proposalId === proposalId && change.completedAt >= approval.approvedAt,
+    )
+    .sort((left, right) => right.completedAt.localeCompare(left.completedAt))[0];
+  if (completed !== undefined) {
+    return ['failed', 'interrupted'].includes(completed.status)
+      ? {
+          code: 'PROPOSAL_REAPPROVAL_REQUIRED',
+          message: '上次执行失败或已中断。请点击“重新批准并重试”，签发新令牌后再执行。',
+        }
+      : {
+          code: 'PROPOSAL_ALREADY_EXECUTED',
+          message: '该方案已经执行完成，请查看并验收 Diff，不能重复启动。',
+        };
+  }
+  if (
+    approval.branchKey !== snapshot.branchKey ||
+    approval.gitRevision !== snapshot.baseGitRevision ||
+    approval.mapRevision + 1 !== snapshot.revision ||
+    Date.parse(approval.expiresAt) <= Date.parse(now)
+  ) {
+    return {
+      code: 'PROPOSAL_REAPPROVAL_REQUIRED',
+      message: '批准令牌已过期或基线已经变化。请点击“重新批准并开始”签发新令牌。',
+    };
+  }
+  return undefined;
 }

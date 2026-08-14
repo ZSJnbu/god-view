@@ -1,18 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
+  ActiveChange,
   AnnotationThread,
   ChangeProposal,
+  CompletedChange,
   Identifier,
   WorkspacePath,
   WriteAccessRequest,
 } from '@god-view/protocol';
 import { annotationTypeLabel } from './annotation-presentation.js';
 import { ProposalList } from './ProposalList.js';
+import { proposalExecutionState } from './proposal-execution.js';
 
 export interface AnnotationThreadsProps {
   readonly annotations: readonly AnnotationThread[];
   readonly requests: readonly WriteAccessRequest[];
   readonly proposals: readonly ChangeProposal[];
+  readonly activeChanges: readonly ActiveChange[];
+  readonly completedChanges: readonly CompletedChange[];
   readonly hasGit: boolean;
   readonly onOpenSource: (path: string, startLine?: number) => void;
   readonly onResolve: (annotationId: Identifier) => void;
@@ -49,6 +54,8 @@ function AnnotationThreadCard({
   annotation,
   requests,
   proposals,
+  activeChanges,
+  completedChanges,
   hasGit,
   onOpenSource,
   onResolve,
@@ -158,6 +165,8 @@ function AnnotationThreadCard({
           <ProposalReview
             key={proposal.id}
             proposal={proposal}
+            activeChanges={activeChanges}
+            completedChanges={completedChanges}
             hasGit={hasGit}
             onApprove={onApproveProposal}
             onStart={onStartApprovedChange}
@@ -182,8 +191,11 @@ function WriteRequest({ request }: { readonly request: WriteAccessRequest }): Re
   );
 }
 
+// eslint-disable-next-line complexity -- 单一卡片需完整呈现 proposed/active/failed/expired/completed 状态机。
 export function ProposalReview({
   proposal,
+  activeChanges,
+  completedChanges,
   hasGit,
   onApprove,
   onStart,
@@ -193,6 +205,8 @@ export function ProposalReview({
   failed,
 }: {
   readonly proposal: ChangeProposal;
+  readonly activeChanges: readonly ActiveChange[];
+  readonly completedChanges: readonly CompletedChange[];
   readonly hasGit: boolean;
   readonly onApprove: AnnotationThreadsProps['onApproveProposal'];
   readonly onStart: AnnotationThreadsProps['onStartApprovedChange'];
@@ -204,7 +218,28 @@ export function ProposalReview({
   const [scope, setScope] = useState<ReadonlySet<WorkspacePath>>(
     () => new Set(proposal.approval?.approvedScope ?? proposal.plannedFiles),
   );
+  const [, refreshExpiry] = useState(0);
   const pending = proposal.status === 'proposed';
+  const execution = proposalExecutionState(proposal, activeChanges, completedChanges, Date.now());
+  const retryable = execution.kind === 'retryable' || execution.kind === 'expired';
+  useEffect(() => {
+    setScope(new Set(proposal.approval?.approvedScope ?? proposal.plannedFiles));
+  }, [proposal.id, proposal.approval?.token, proposal.plannedFiles]);
+  useEffect(() => {
+    const expiresAt = proposal.approval?.expiresAt;
+    if (expiresAt === undefined) return;
+    const remaining = Date.parse(expiresAt) - Date.now();
+    if (remaining <= 0) return;
+    const timer = window.setTimeout(
+      () => {
+        refreshExpiry((value) => value + 1);
+      },
+      Math.min(remaining + 50, 2_147_483_647),
+    );
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [proposal.approval?.expiresAt]);
   return (
     <section className="proposal-card" aria-label={`修改方案：${proposal.summary}`}>
       <header>
@@ -239,6 +274,30 @@ export function ProposalReview({
           {proposal.approval.expiresAt}。当前为 monitored 模式，不能强制阻止外部进程越界写入。
         </p>
       )}
+      {execution.kind === 'active' && (
+        <p role="status">ChangeSet {execution.change.changeSetId} 正在执行，不能重复启动。</p>
+      )}
+      {execution.kind === 'expired' && (
+        <p className="annotation-warning" role="alert">
+          本次批准令牌已过期。点击“重新批准并开始”会由你明确签发一枚新的 15 分钟令牌。
+        </p>
+      )}
+      {execution.kind === 'retryable' && (
+        <div className="annotation-warning" role="alert">
+          <strong>
+            上次执行{execution.change.status === 'interrupted' ? '已中断' : '失败'}
+            ，没有被当作成功。
+          </strong>
+          {execution.change.note !== undefined && <p>{execution.change.note}</p>}
+          <small>重试前必须由你重新批准；插件不会自动续签旧授权。</small>
+        </div>
+      )}
+      {execution.kind === 'completed' && (
+        <p className="agent-run__success">
+          ✓ 该方案已经执行，状态：{completedStatusLabel(execution.change.status)}。请在下方 Diff
+          验收区查看结果，不会再次启动同一方案。
+        </p>
+      )}
       {pending && !hasGit && (
         <p className="annotation-warning">
           当前项目没有 Git 基线。请先在 VS Code 源代码管理中初始化仓库并创建首次提交， 然后重新打开
@@ -269,7 +328,7 @@ export function ProposalReview({
             </button>
           </>
         )}
-        {proposal.status === 'approved' && (
+        {proposal.status === 'approved' && execution.kind === 'ready' && (
           <>
             <button
               type="button"
@@ -294,9 +353,46 @@ export function ProposalReview({
             )}
           </>
         )}
+        {proposal.status === 'approved' && retryable && (
+          <>
+            <button
+              type="button"
+              className="chip chip--active"
+              disabled={editing || !hasGit || scope.size === 0}
+              onClick={() => {
+                onApprove(proposal.id, [...scope]);
+              }}
+            >
+              {editing
+                ? 'Agent 正在编辑并同步视图…'
+                : execution.kind === 'retryable'
+                  ? '重新批准并重试'
+                  : '重新批准并开始'}
+            </button>
+            <button
+              type="button"
+              className="chip"
+              onClick={() => {
+                onCopyTask(proposal.id);
+              }}
+            >
+              复制任务（兜底）
+            </button>
+          </>
+        )}
       </div>
     </section>
   );
+}
+
+function completedStatusLabel(status: CompletedChange['status']): string {
+  return {
+    pending_review: '等待验收',
+    accepted: '已接受',
+    accepted_with_issues: '带问题接受',
+    failed: '失败',
+    interrupted: '已中断',
+  }[status];
 }
 
 function proposalStatusLabel(status: ChangeProposal['status']): string {

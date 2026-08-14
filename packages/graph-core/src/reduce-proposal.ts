@@ -2,6 +2,7 @@ import {
   err,
   errorCodes,
   ok,
+  type ChangeProposal,
   type ChangeApprovedEvent,
   type ChangeProposalEvent,
   type ChangeRejectedEvent,
@@ -144,9 +145,9 @@ function approve(snapshot: GraphSnapshot, event: ChangeApprovedEvent): ReduceRes
         event.payload.proposalId,
       ),
     );
-  if (proposal.status !== 'proposed')
+  if (proposal.status !== 'proposed' && !canRetryApproval(snapshot, proposal, event.timestamp))
     return err(
-      domainError(errorCodes.SCHEMA_VIOLATION, `方案 ${proposal.id} 不能重复批准`, proposal.id),
+      domainError(errorCodes.SCHEMA_VIOLATION, `方案 ${proposal.id} 当前不能重新批准`, proposal.id),
     );
   if (
     approval.branchKey !== snapshot.branchKey ||
@@ -167,6 +168,25 @@ function approve(snapshot: GraphSnapshot, event: ChangeApprovedEvent): ReduceRes
   if (annotation !== undefined)
     annotations.set(annotation.id, { ...annotation, status: 'approved' });
   return ok(commit(snapshot, event, { annotations, changeProposals: proposals }));
+}
+
+function canRetryApproval(
+  snapshot: GraphSnapshot,
+  proposal: ChangeProposal,
+  timestamp: string,
+): boolean {
+  if (proposal.status !== 'approved' || proposal.approval === undefined) return false;
+  if ([...snapshot.activeChanges.values()].some((change) => change.proposalId === proposal.id)) {
+    return false;
+  }
+  const completed = [...snapshot.completedChanges.values()]
+    .filter((change) => change.proposalId === proposal.id)
+    .sort((left, right) => right.completedAt.localeCompare(left.completedAt))[0];
+  if (completed !== undefined) return ['failed', 'interrupted'].includes(completed.status);
+  return (
+    proposal.approval.mapRevision + 1 !== snapshot.revision ||
+    Date.parse(proposal.approval.expiresAt) <= Date.parse(timestamp)
+  );
 }
 
 function reject(snapshot: GraphSnapshot, event: ChangeRejectedEvent): ReduceResult {
