@@ -2,6 +2,13 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.36 - 2026-08-14
+
+- Replaces the separate in-extension Agent runner and transcript with official Codex/Claude terminal sessions, preserving native permissions, questions, history and recovery.
+- Adds project-scoped UserPromptSubmit hooks for lightweight canvas context while keeping structured map updates in the God View MCP Gateway.
+- Moves scope-expansion approval to authoritative active ChangeSets and automatically tells the current native terminal to continue after the user's decision.
+- Drives canvas pause, step and replay directly from MCP map patches, and adds full browser coverage for native-terminal handoff, approval, Diff review, dragging and replay.
+
 ## 0.3.35 - 2026-08-14
 
 - Makes the floating ChangeSet Diff review panel draggable from its visible title bar while keeping it inside the viewport.

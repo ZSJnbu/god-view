@@ -1,6 +1,6 @@
 # Support matrix
 
-God View 0.3.35 targets local, trusted, file-backed VS Code workspaces. Claims below distinguish
+God View 0.3.36 targets local, trusted, file-backed VS Code workspaces. Claims below distinguish
 recorded evidence from targets that still require CI or environment-owner verification.
 
 | Environment                      | Status              | Evidence / limitation                                                               |
@@ -15,10 +15,9 @@ recorded evidence from targets that still require CI or environment-owner verifi
 | Remote SSH / WSL / Dev Container | Beta, unverified    | Not a first-MVP blocker; do not describe as supported until a recorded smoke passes |
 | VS Code for the Web              | Unsupported         | The extension and bundled stdio Gateway require a desktop Extension Host            |
 
-Automatic first-map initialization launches a new constrained CLI subprocess: Codex receives a
-read-only sandbox and Claude receives an explicit read/MCP allowlist plus write/shell denylist.
-Already-open or manually launched Agent sessions remain `monitored`; God View can surface their
-out-of-scope Git changes but cannot prevent those external processes from writing them.
-Managed editing runs add a protocol-level pre-write gate: the Agent requests new paths, the user
-decides in God View, and the Extension Host updates authoritative scope before resuming the same
-session. This is still monitored behavior, not a per-file operating-system sandbox.
+First-map initialization opens an official Codex or Claude Code terminal and does not override the
+Agent's native sandbox or approval configuration. God View adds a project UserPromptSubmit hook and
+MCP registration; Codex may require native project-hook trust on first use. Source writes remain
+`monitored`: God View can surface out-of-scope Git changes but cannot replace the Agent or operating
+system sandbox. The protocol pre-write gate records requested paths, the user decides in God View,
+and the Extension Host updates authoritative scope before notifying the same native terminal.
