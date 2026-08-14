@@ -39,6 +39,7 @@ import {
   isChangeCommand,
   isHostCommand,
   isSnapshotCommand,
+  projectChangeContextNodeIds,
 } from './map-panel-commands.js';
 
 type LayoutPositions = Record<string, { x: number; y: number }>;
@@ -332,12 +333,17 @@ export class MapPanel {
     command: Extract<WebviewCommand, { type: 'sendAgentMessage' }>,
   ): Promise<void> {
     if (command.mode === 'change') {
-      const nodeIds = command.nodeIds?.filter((id) => this.#service.snapshot.nodes.has(id)) ?? [];
+      const explicitNodeIds =
+        command.nodeIds?.filter((id) => this.#service.snapshot.nodes.has(id)) ?? [];
+      const nodeIds =
+        explicitNodeIds.length > 0
+          ? explicitNodeIds
+          : projectChangeContextNodeIds(this.#service.snapshot.nodes);
       if (nodeIds.length === 0) {
         this.#post({
           type: 'error',
           code: 'CHANGE_CONTEXT_REQUIRED',
-          message: '修改请求需要先在地图上选择一个模块，让 Agent 能限定影响范围。',
+          message: '当前地图没有可用的项目模块，暂时无法建立修改上下文。',
         });
         return;
       }

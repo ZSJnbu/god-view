@@ -159,7 +159,6 @@ export function AgentConversationPanel(props: {
             <input
               type="checkbox"
               checked={mode === 'change'}
-              disabled={props.selectedNode === undefined}
               onChange={(event) => {
                 setMode(event.target.checked ? 'change' : 'chat');
               }}
@@ -175,7 +174,14 @@ export function AgentConversationPanel(props: {
             {active ? 'Agent 正在处理…' : '发送'}
           </button>
         </div>
-        {mode === 'change' && <small>Agent 会先提交方案；未批准前不会修改任何文件。</small>}
+        {mode === 'change' && (
+          <small>
+            Agent 会先提交方案；未批准前不会修改任何文件。
+            {props.selectedNode === undefined
+              ? ' 当前未选模块，将使用项目顶层模块作为修改上下文。'
+              : ` 当前限定在 ${props.selectedNode.label}。`}
+          </small>
+        )}
       </div>
     </section>
   );

@@ -2,6 +2,12 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.28 - 2026-08-14
+
+- Allows project-level change requests directly from Agent chat without requiring the user to select a map node first.
+- Uses a deterministic, bounded set of active top-level semantic nodes as project context, with safe fallbacks for malformed or file-only maps.
+- Explains the inferred project context beside the composer and adds unit plus real-browser regressions for the previously disabled checkbox.
+
 ## 0.3.27 - 2026-08-13
 
 - Keeps change requests in the project Agent conversation after analysis by rendering the proposed file scope, structural changes, risks and validation plan directly in the same pane.

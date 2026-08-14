@@ -1,5 +1,24 @@
-import type { ChangeProposal } from '@god-view/protocol';
+import type { ChangeProposal, GraphNode, Identifier } from '@god-view/protocol';
 import type { WebviewCommand } from '@god-view/webview-bridge';
+
+const maximumProjectChangeContextNodes = 20;
+
+/**
+ * 项目级修改没有显式选中节点时，优先选择活跃的顶层语义节点。
+ * 不把所有 file 节点塞进提示；若地图没有正常根节点，再回退到非文件节点和任意活跃节点。
+ */
+export function projectChangeContextNodeIds(
+  nodes: ReadonlyMap<Identifier, GraphNode>,
+): readonly Identifier[] {
+  const active = [...nodes.values()].filter((node) => node.lifecycle.status === 'active');
+  const semantic = active.filter((node) => node.type !== 'file');
+  const roots = semantic.filter((node) => node.parentId === undefined);
+  const candidates = roots.length > 0 ? roots : semantic.length > 0 ? semantic : active;
+  return candidates
+    .map((node) => node.id)
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, maximumProjectChangeContextNodes);
+}
 
 export function isSnapshotCommand(
   command: WebviewCommand,

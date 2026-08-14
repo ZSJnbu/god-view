@@ -22,6 +22,12 @@ test('常驻 Agent 对话在插件内实时回复，并保留明确的修改审�
   await page.getByRole('button', { name: '发送' }).click();
   await expect(panel).toContainText('正在读取最新项目地图…');
   await expect(panel).toContainText('订单从 API 入口进入 Orders，再调用 Payments 完成授权。');
+  const changeRequest = page.getByRole('checkbox', { name: '作为修改请求（先审批范围）' });
+  await expect(changeRequest).toBeEnabled();
+  await changeRequest.check();
+  await expect(panel).toContainText('当前未选模块，将使用项目顶层模块作为修改上下文');
+  await page.getByLabel('发送给项目 Agent').fill('把它实现成个人博客');
+  await page.getByRole('button', { name: '发送' }).click();
   const commands = await page.evaluate(
     () => (window as unknown as { __godViewCommands: unknown[] }).__godViewCommands,
   );
@@ -30,6 +36,12 @@ test('常驻 Agent 对话在插件内实时回复，并保留明确的修改审�
     agent: 'codex',
     message: '订单数据如何流动？',
     mode: 'chat',
+  });
+  expect(commands).toContainEqual({
+    type: 'sendAgentMessage',
+    agent: 'codex',
+    message: '把它实现成个人博客',
+    mode: 'change',
   });
 });
 
