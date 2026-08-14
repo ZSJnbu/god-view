@@ -2,6 +2,13 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.30 - 2026-08-14
+
+- Shows authoritative active, failed, expired and completed execution states on approved proposals instead of returning to a misleading generic start button.
+- Preserves the failed ChangeSet note and existing code changes, then requires an explicit user action to reapprove and retry with a fresh 15-minute token.
+- Gives every reapproval a new idempotency key, blocks duplicate active or successful executions in the Extension Host, and keeps automatic authorization renewal forbidden.
+- Adds unit, real-Chrome and Extension Host regressions for retry authorization, stale tokens, duplicate starts and successful-result handoff to Diff review.
+
 ## 0.3.29 - 2026-08-14
 
 - Adds pre-write scope expansion requests for managed Codex and Claude editing runs. The Agent must list new files and a reason, then stop before writing them.
