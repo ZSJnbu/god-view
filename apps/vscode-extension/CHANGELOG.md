@@ -2,6 +2,12 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.34 - 2026-08-14
+
+- Labels task-preexisting out-of-scope Diff entries as prior workspace changes instead of Agent scope violations.
+- Keeps normal “accept result” available when every actual ChangeSet write stayed inside the approved scope.
+- Preserves strict “accept with issues” handling for real or unknown out-of-scope writes and adds a real-Chrome regression for both paths.
+
 ## 0.3.33 - 2026-08-14
 
 - Turns ambiguous change requests such as “continue” into an explicit in-panel clarification step and resumes the same Agent session after the user chooses a direction.
