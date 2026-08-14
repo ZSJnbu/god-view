@@ -137,4 +137,18 @@ describe('proposal reapproval safety', () => {
     });
     expect(failureReason(changedHead)).toContain('Git 基线已经变化');
   });
+
+  it('未跟踪目录覆盖批准范围内的文件时要求用户确认重叠', () => {
+    const overlap = prepareApproval({
+      snapshot: snapshot(),
+      gitState: { ...gitState, preexistingChanges: ['src/'] },
+      proposalId: proposal.id,
+      approvedScope: ['src/orders.ts'],
+      acknowledgePreexistingChanges: false,
+      now,
+    });
+    expect(failureReason(overlap)).toContain('已有未提交改动重叠');
+    if (!('ok' in overlap)) throw new Error('expected overlap failure');
+    expect(overlap.overlappingChanges).toEqual(['src/orders.ts']);
+  });
 });

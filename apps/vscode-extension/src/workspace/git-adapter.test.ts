@@ -151,6 +151,25 @@ describe('diffSummary', () => {
     expect(summary?.files[0]?.scopeStatus).toBe('approved');
   });
 
+  it('启动前未跟踪目录覆盖其内部文件，不把旧文件归因给当前 ChangeSet', async () => {
+    await writeSource('public/file.svg', '<svg />\n');
+    const before = await git.read();
+    expect(before.preexistingChanges).toContain('public/');
+
+    const summary = await git.diffSummary({
+      approvedScope: ['src/a.ts'],
+      preexistingChanges: before.preexistingChanges,
+      computedAt: '2026-08-12T00:00:00.000Z',
+    });
+    expect(summary?.files).toContainEqual(
+      expect.objectContaining({
+        path: 'public/file.svg',
+        scopeStatus: 'outside_scope',
+        attribution: 'preexisting_overlap',
+      }),
+    );
+  });
+
   it('不把 God View 自己的运行时文件归因给 Agent', async () => {
     await writeSource('.godview/session.json', '{}\n');
     const summary = await git.diffSummary({

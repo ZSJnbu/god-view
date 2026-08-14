@@ -1,6 +1,6 @@
 import type { ChangeProposal, Identifier, WorkspacePath } from '@god-view/protocol';
 import type { GraphSnapshot } from '@god-view/graph-core';
-import type { GitState } from '../workspace/git-adapter.js';
+import { isCoveredByPathSet, type GitState } from '../workspace/git-adapter.js';
 
 export interface ApprovalFailure {
   readonly ok: false;
@@ -49,7 +49,7 @@ export function prepareApproval(input: {
   )
     return { ok: false, reason: '分支、地图或 Git 基线已经变化，请让 Agent 重新提交方案' };
   const overlappingChanges = scope.filter((path) =>
-    input.gitState.preexistingChanges.includes(path),
+    isCoveredByPathSet(path, input.gitState.preexistingChanges),
   );
   if (overlappingChanges.length > 0 && !input.acknowledgePreexistingChanges)
     return {

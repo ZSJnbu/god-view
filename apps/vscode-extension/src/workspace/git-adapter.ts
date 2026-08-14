@@ -90,7 +90,9 @@ export class GitAdapter {
         additions: count.additions,
         deletions: count.deletions,
         scopeStatus: isInScope(path, input.approvedScope) ? 'approved' : 'outside_scope',
-        attribution: input.preexistingChanges.includes(path) ? 'preexisting_overlap' : 'change_set',
+        attribution: isCoveredByPathSet(path, input.preexistingChanges)
+          ? 'preexisting_overlap'
+          : 'change_set',
       };
     });
     const canonical = files
@@ -158,9 +160,18 @@ function parseNumstat(
 }
 
 function isInScope(path: WorkspacePath, scope: readonly WorkspacePath[]): boolean {
-  return scope.some(
-    (allowed) => path === allowed || path.startsWith(`${allowed.replace(/\/$/u, '')}/`),
-  );
+  return isCoveredByPathSet(path, scope);
+}
+
+/** Git porcelain may collapse an untracked directory (`public/`) while Diff expands its files. */
+export function isCoveredByPathSet(
+  path: WorkspacePath,
+  candidates: readonly WorkspacePath[],
+): boolean {
+  return candidates.some((candidate) => {
+    const normalized = candidate.replace(/\/+$/u, '');
+    return path === normalized || path.startsWith(`${normalized}/`);
+  });
 }
 
 function splitLines(output: string): string[] {
