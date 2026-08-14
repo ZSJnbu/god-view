@@ -478,14 +478,14 @@ export class AgentInitializationRunner {
     if (line.includes(questionPrefix) || line.includes(resultPrefix)) {
       run.structuredOutputObserved = true;
     }
-    if (/not logged in|authentication failed|unauthorized|please log in/iu.test(line)) {
-      run.failed = true;
-      run.authenticationFailureObserved = true;
-    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(line);
     } catch {
+      if (isAuthenticationFailureMessage(line)) {
+        run.failed = true;
+        run.authenticationFailureObserved = true;
+      }
       this.#append(run, line);
       this.#detectQuestion(run, line);
       this.#detectResult(run, line);
@@ -495,7 +495,10 @@ export class AgentInitializationRunner {
     if (containsToolActivity(parsed)) run.observedToolActivity = true;
     const sessionId = stringValue(record?.['session_id']) ?? stringValue(record?.['thread_id']);
     if (sessionId !== undefined) run.sessionId = sessionId;
-    if (isFailureEvent(record)) run.failed = true;
+    if (isFailureEvent(record)) {
+      run.failed = true;
+      if (isAuthenticationFailureMessage(line)) run.authenticationFailureObserved = true;
+    }
     for (const text of extractTexts(parsed)) {
       this.#detectScopeExpansion(run, text);
       this.#append(run, summarizeToolPayload(text));
@@ -931,6 +934,13 @@ function isFailureEvent(record: Record<string, unknown> | undefined): boolean {
     type === 'error' ||
     type === 'turn.failed' ||
     (type === 'result' && record?.['subtype'] === 'error')
+  );
+}
+
+function isAuthenticationFailureMessage(value: string): boolean {
+  return (
+    /\bnot logged in\b|\bauthentication failed\b|\bplease log in\b/iu.test(value) ||
+    /\b401\s+unauthorized\b|\bunauthorized\s*:\s*(?:please\s+)?log in\b/iu.test(value)
   );
 }
 

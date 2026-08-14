@@ -119,6 +119,52 @@ describe('AgentInitializationRunner', () => {
     });
   });
 
+  it('普通工具输出包含 unauthorized 时仍以权威 ChangeSet 完成为准', async () => {
+    const process = fakeProcess();
+    const updates: AgentRunView[] = [];
+    const runner = new AgentInitializationRunner({
+      workspaceRoot: '/repo',
+      task: () => '地图任务',
+      approvedChangeTask: () => '执行批准方案',
+      approvedChangeCompleted: () => true,
+      authorize: () => Promise.resolve(true),
+      onUpdate: (run) => updates.push(run),
+      spawnProcess: vi.fn(() => process.child) as unknown as typeof spawn,
+    });
+
+    await runner.start('codex', 'approved_change', 'proposal.orders');
+    process.stdout.write(
+      `${JSON.stringify({
+        type: 'item.completed',
+        item: {
+          type: 'command_execution',
+          aggregated_output:
+            'node_modules/next/dist/docs/app/api-reference/file-conventions/unauthorized.md',
+        },
+      })}\n`,
+    );
+    process.stdout.write(
+      `${JSON.stringify({
+        type: 'item.completed',
+        item: {
+          type: 'command_execution',
+          aggregated_output: '{"unauthorized":"$undefined"}',
+        },
+      })}\n`,
+    );
+    process.stdout.write(
+      `${JSON.stringify({ type: 'item.completed', text: 'GOD_VIEW_INITIALIZATION_RESULT:{"status":"completed","proposalId":"proposal.orders"}' })}\n`,
+    );
+    process.close(0);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(updates.at(-1)).toMatchObject({
+      purpose: 'approved_change',
+      state: 'completed',
+      restartRequired: false,
+    });
+  });
+
   it('从扩围工具权威返回生成审批卡片，批准后恢复同一个 Codex 会话', async () => {
     const first = fakeProcess();
     const resumed = fakeProcess();
