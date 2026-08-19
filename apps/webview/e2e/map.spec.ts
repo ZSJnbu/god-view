@@ -623,16 +623,17 @@ test('键盘可依次到达层级、搜索和画布操作', async ({ page }) => 
 
 test('讲解可播放、暂停、切换速度、逐步导航和退出', async ({ page }) => {
   await page.getByRole('button', { name: /30 秒认识项目：从入口到支付/u }).click();
-  await expect(page.getByRole('region', { name: '讲解播放器' })).toContainText('第 1 / 3 步');
+  const player = page.getByRole('region', { name: '讲解播放器' });
+  await expect(player).toContainText('第 1 / 3 步');
   await expect(page.getByText('请求从 API 入口进入')).toBeVisible();
 
-  await page.getByRole('button', { name: '暂停' }).click();
+  await player.getByRole('button', { name: '暂停' }).click();
   await page.getByLabel('讲解速度').selectOption('2');
-  await page.getByRole('button', { name: '下一步' }).click();
-  await expect(page.getByRole('region', { name: '讲解播放器' })).toContainText('第 2 / 3 步');
-  await page.getByRole('button', { name: '重播' }).click();
-  await expect(page.getByRole('region', { name: '讲解播放器' })).toContainText('第 1 / 3 步');
-  await page.getByRole('button', { name: '退出讲解' }).click();
+  await player.getByRole('button', { name: '下一步' }).click();
+  await expect(player).toContainText('第 2 / 3 步');
+  await player.getByRole('button', { name: '重播' }).click();
+  await expect(player).toContainText('第 1 / 3 步');
+  await player.getByRole('button', { name: '退出讲解' }).click();
   await expect(page.getByRole('region', { name: '项目讲解' })).toBeVisible();
 });
 
