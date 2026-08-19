@@ -11,6 +11,9 @@ export interface EmptyMapProps {
   readonly onConfigureAgent: (agent: ConfigurableAgent) => void;
   readonly onRefreshAgentStatus: () => void;
   readonly onStartInitialization: (agent: ConfigurableAgent) => void;
+  readonly onReplayHistory: () => void;
+  /** 无 Git 工作区没有提交历史可放，入口必须明确禁用而不是点了没反应。 */
+  readonly hasGit: boolean;
 }
 
 /** 首次建图由官方 Agent 终端执行，God View 只提供 MCP、hook 与画布反馈。 */
@@ -125,6 +128,16 @@ export function EmptyMap(props: EmptyMapProps): React.JSX.Element {
           </button>
           <button className="chip" type="button" onClick={props.onRefreshAgentStatus}>
             刷新配置状态
+          </button>
+          {/* 还没有地图时，Git 历史本身就能先讲清楚这个项目是怎么长起来的。 */}
+          <button
+            className="chip"
+            type="button"
+            disabled={!props.hasGit}
+            title={props.hasGit ? '按提交回放项目结构的成长过程' : '当前不是 Git 工作区'}
+            onClick={props.onReplayHistory}
+          >
+            历史回放
           </button>
         </div>
         {activeAgent === undefined && (

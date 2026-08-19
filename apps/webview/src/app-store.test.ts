@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { HistoryTimelineView } from '@god-view/webview-bridge';
 import { AppStore } from './app-store.js';
-import { capabilities, makeDocument, makeNode, makeStory } from './model/fixtures.test-utils.js';
+import {
+  capabilities,
+  makeDocument,
+  makeEdge,
+  makeNode,
+  makeStory,
+} from './model/fixtures.test-utils.js';
 
 function hydratedStore(): AppStore {
   const store = new AppStore();
@@ -507,5 +514,300 @@ describe('AppStore 搜索定位', () => {
     expect(store.getState().view.focusNodeId).toBeUndefined();
     expect(store.getState().view.focusDepth).toBeUndefined();
     expect(store.getState().selectedId).toBe('orders/a.ts');
+  });
+});
+
+/** 历史回放：回放的是仓库自己的提交历史，与 AI 补丁回放共享画布但互不干扰。 */
+function historyTimeline(): HistoryTimelineView {
+  const frame = (
+    index: number,
+    presentNodeIds: readonly string[],
+    changedNodeIds: readonly string[],
+    magnitudes: Record<string, number>,
+  ) => ({
+    index,
+    sha: `sha-${String(index)}`,
+    shortSha: `sha-${String(index)}`,
+    author: 'tester',
+    committedAt: `2026-01-0${String(index + 1)}T00:00:00.000Z`,
+    subject: `commit ${String(index)}`,
+    additions: 10,
+    deletions: 1,
+    commitCount: 1,
+    fileCount: index + 1,
+    presentNodeIds: [...presentNodeIds],
+    changedNodeIds: [...changedNodeIds],
+    magnitudes,
+  });
+  return {
+    nodes: [makeNode('h1'), makeNode('h2')],
+    edges: [makeEdge('h.edge', 'h1', 'h2')],
+    frames: [
+      frame(0, ['h1'], ['h1'], { h1: 10 }),
+      frame(1, ['h1', 'h2'], ['h2'], { h1: 10, h2: 5 }),
+    ],
+    truncatedCommits: 3,
+    derivedNodeCount: 1,
+  };
+}
+
+function historyStore(): AppStore {
+  const store = hydratedStore();
+  store.beginHistoryLoad();
+  store.receive({ type: 'history/timeline', timeline: historyTimeline() });
+  return store;
+}
+
+describe('AppStore 历史回放', () => {
+  it('时间线到达后画出第一帧，并保留截断与推断节点的说明', () => {
+    const store = historyStore();
+
+    const state = store.getState();
+    expect(state.history).toMatchObject({
+      status: 'ready',
+      index: 0,
+      frameCount: 2,
+      truncatedCommits: 3,
+      derivedNodeCount: 1,
+    });
+    expect([...state.map.nodes.keys()]).toEqual(['h1']);
+    // 关系的另一端还没出现，这一帧不能画出这条线。
+    expect(state.map.edges.size).toBe(0);
+    expect(state.changedNodeIds).toEqual(['h1']);
+  });
+
+  it('逐帧前进后补齐节点与关系，并标出本帧改动', () => {
+    const store = historyStore();
+
+    store.stepHistory(1);
+
+    const state = store.getState();
+    expect([...state.map.nodes.keys()]).toEqual(['h1', 'h2']);
+    expect(state.map.edges.has('h.edge')).toBe(true);
+    expect(state.changedNodeIds).toEqual(['h2']);
+    expect(state.history.magnitudes).toEqual({ h1: 10, h2: 5 });
+  });
+
+  it('拖动进度条跳帧，越界值被夹到有效范围', () => {
+    const store = historyStore();
+
+    store.seekHistory(99);
+
+    expect(store.getState().history.index).toBe(1);
+  });
+
+  it('播放到最后一帧后停在终态', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = historyStore();
+      store.playHistory();
+
+      expect(store.getState().history.status).toBe('playing');
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(store.getState().history.index).toBe(1);
+      expect(store.getState().history.status).toBe('paused');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('减少动态效果时不自动连播，只提示逐帧查看', () => {
+    const store = new AppStore();
+    store.receive({
+      type: 'map/snapshot',
+      document: makeDocument([makeNode('a')], [], 1),
+      capabilities: { ...capabilities, reducedMotion: true },
+      factsRevision: 1,
+      drift: [],
+    });
+    store.receive({ type: 'history/timeline', timeline: historyTimeline() });
+
+    store.playHistory();
+
+    expect(store.getState().history.status).toBe('paused');
+    expect(store.getState().history.message).toContain('减少动态效果');
+  });
+
+  it('回放期间到达的地图补丁不改画面，退出后可见', () => {
+    const store = historyStore();
+
+    store.receive({
+      type: 'map/patch',
+      revision: 2,
+      factsRevision: 2,
+      patch: {
+        upsertedNodes: [makeNode('c')],
+        upsertedEdges: [],
+        removedNodeIds: [],
+        removedEdgeIds: [],
+      },
+      drift: [],
+    });
+
+    expect(store.getState().map.nodes.has('c')).toBe(false);
+    expect([...store.getState().map.nodes.keys()]).toEqual(['h1']);
+
+    store.exitHistory();
+
+    expect(store.getState().history.status).toBe('idle');
+    expect(store.getState().map.nodes.has('c')).toBe(true);
+    expect(store.getState().map.nodes.has('h1')).toBe(false);
+  });
+
+  it('回放期间到达的快照只更新权威地图', () => {
+    const store = historyStore();
+
+    store.receive({
+      type: 'map/snapshot',
+      document: makeDocument([makeNode('a'), makeNode('b'), makeNode('z')], [], 5),
+      capabilities,
+      factsRevision: 5,
+      drift: [],
+    });
+
+    expect([...store.getState().map.nodes.keys()]).toEqual(['h1']);
+
+    store.exitHistory();
+
+    expect(store.getState().map.nodes.has('z')).toBe(true);
+  });
+
+  it('固定坐标应用到当前帧，让节点只出现不重排', () => {
+    const store = historyStore();
+
+    store.setHistoryLayout({ h1: { x: 10, y: 20 }, h2: { x: 30, y: 40 } });
+
+    expect(store.getState().map.layout).toEqual({ h1: { x: 10, y: 20 }, h2: { x: 30, y: 40 } });
+    store.stepHistory(1);
+    expect(store.getState().map.layout['h2']).toEqual({ x: 30, y: 40 });
+  });
+
+  it('最终帧的地图用于一次性计算全程坐标', () => {
+    const store = historyStore();
+
+    expect([...(store.historyFinalMap()?.nodes.keys() ?? [])]).toEqual(['h1', 'h2']);
+  });
+
+  it('读取失败时进入错误态并保留原因', () => {
+    const store = hydratedStore();
+    store.beginHistoryLoad();
+
+    store.receive({
+      type: 'error',
+      code: 'HISTORY_UNAVAILABLE',
+      message: '当前工作区没有可回放的 Git 历史',
+    });
+
+    expect(store.getState().history.status).toBe('error');
+    expect(store.getState().history.message).toContain('Git 历史');
+    // 出错不清空画布：已经画出来的地图仍然有效。
+    expect(store.getState().map.nodes.size).toBe(2);
+  });
+});
+
+describe('AppStore 历史回放的边界情况', () => {
+  it('没有时间线时播放、逐帧和拖动都不做任何事', () => {
+    const store = hydratedStore();
+
+    store.playHistory();
+    store.stepHistory(1);
+    store.seekHistory(3);
+    store.pauseHistory();
+
+    expect(store.getState().history.status).toBe('idle');
+    expect(store.historyFinalMap()).toBeUndefined();
+    expect([...store.getState().map.nodes.keys()]).toEqual(['a', 'b']);
+  });
+
+  it('空时间线报告没有可回放的提交，而不是画一张空图', () => {
+    const store = hydratedStore();
+    store.beginHistoryLoad();
+
+    store.receive({
+      type: 'history/timeline',
+      timeline: { nodes: [], edges: [], frames: [], truncatedCommits: 0, derivedNodeCount: 0 },
+    });
+
+    expect(store.getState().history.status).toBe('error');
+    expect(store.getState().history.message).toContain('没有可回放的提交');
+    expect(store.getState().map.nodes.size).toBe(2);
+  });
+
+  it('未播放时的暂停与未进入回放时的退出都是空操作', () => {
+    const store = historyStore();
+    store.pauseHistory();
+    expect(store.getState().history.status).toBe('ready');
+
+    store.exitHistory();
+    expect(store.getState().history.status).toBe('idle');
+    store.exitHistory();
+    expect(store.getState().history.status).toBe('idle');
+  });
+
+  it('播放中改变速度后继续按新节奏播放', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = historyStore();
+      store.playHistory();
+      store.setHistorySpeed(4);
+
+      expect(store.getState().history.speed).toBe(4);
+      expect(store.getState().history.status).toBe('playing');
+      await vi.advanceTimersByTimeAsync(200);
+      expect(store.getState().history.index).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('播放中拖动进度条保持播放状态', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = historyStore();
+      store.playHistory();
+
+      store.seekHistory(0);
+
+      expect(store.getState().history.status).toBe('playing');
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(store.getState().history.index).toBe(1);
+      expect(store.getState().history.status).toBe('paused');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('暂停中的速度调整不会偷偷恢复播放', () => {
+    const store = historyStore();
+
+    store.setHistorySpeed(2);
+
+    expect(store.getState().history.status).toBe('ready');
+    expect(store.getState().history.speed).toBe(2);
+  });
+
+  it('未进入回放时设置坐标不影响 live 地图', () => {
+    const store = hydratedStore();
+
+    store.setHistoryLayout({ a: { x: 5, y: 5 } });
+
+    expect(store.getState().map.layout).toEqual({});
+  });
+
+  it('回放期间的事实更新不挂到历史帧上', () => {
+    const store = historyStore();
+
+    store.receive({
+      type: 'map/facts',
+      factsRevision: 9,
+      drift: [{ kind: 'missing_file', detail: 'src/gone.ts 已不存在' }],
+    });
+
+    expect(store.getState().map.drift).toEqual([]);
+
+    store.exitHistory();
+
+    expect(store.getState().map.drift).toHaveLength(1);
   });
 });

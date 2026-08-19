@@ -2,6 +2,13 @@
 
 All notable changes to God View are documented here.
 
+## Unreleased
+
+- Adds Git history replay: the toolbar (and the empty-map screen) can replay how the project grew commit by commit, mapping files to declared map nodes first and falling back to directory-derived groups.
+- Sizes nodes by accumulated code volume, highlights nodes touched by the current frame, keeps positions fixed for the whole replay, and offers play/pause/step/speed plus a draggable timeline with commit details.
+- Reads Git read-only (`log`, `ls-tree`), reuses the shared exclusion list so build output and dependencies never appear as modules, and states truncated commits and inferred nodes instead of implying a complete, declared map.
+- Keeps live map patches and snapshots out of the canvas while replaying; they apply to the authoritative map and appear again on exit.
+
 ## 0.3.38 - 2026-08-19
 
 - Keeps the map replay controls visible after reloads and before the first Agent patch, so users can always find the playback entry.

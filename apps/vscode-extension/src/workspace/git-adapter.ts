@@ -15,6 +15,30 @@ export interface GitState {
   readonly preexistingChanges: readonly string[];
 }
 
+export interface GitCommitFile {
+  readonly path: WorkspacePath;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly removed: boolean;
+}
+
+export interface GitCommitLog {
+  readonly sha: string;
+  readonly author: string;
+  readonly committedAt: string;
+  readonly subject: string;
+  readonly files: readonly GitCommitFile[];
+}
+
+export interface GitHistory {
+  /** 从旧到新排序，最多 `limit` 条。 */
+  readonly commits: readonly GitCommitLog[];
+  /** 窗口起点之前已经存在的文件，用于回放的起始基线。 */
+  readonly baselineFiles: readonly WorkspacePath[];
+  /** 因为 `limit` 被丢掉的更早提交数。 */
+  readonly truncatedCommits: number;
+}
+
 /**
  * 只读 Git 适配器。
  *
@@ -60,6 +84,50 @@ export class GitAdapter {
     }
     const deleted = new Set(splitLines((await this.#git(['ls-files', '--deleted'])) ?? ''));
     return splitLines(output).filter((path) => !deleted.has(path));
+  }
+
+  /**
+   * 读取当前分支的提交历史，用于「历史回放」。
+   *
+   * `--no-renames` 让重命名表现为删除 + 新增：回放关心的是每个阶段有哪些文件，
+   * 把 `{a => b}/c` 这种重命名摘要解析对反而更容易出错。`--raw` 提供状态字母
+   * （用于识别删除），`--numstat` 提供行数；两者在同一次调用里成对输出，避免
+   * 分两次调用后再按顺序配对。
+   */
+  async readHistory(options: { readonly limit: number }): Promise<GitHistory | undefined> {
+    const limit = Math.max(1, Math.trunc(options.limit));
+    const output = await this.#git([
+      'log',
+      '--first-parent',
+      '--no-merges',
+      '--no-renames',
+      '--reverse',
+      '-n',
+      String(limit),
+      '--raw',
+      '--numstat',
+      '--pretty=format:%x01%H%x1f%an%x1f%aI%x1f%s',
+    ]);
+    if (output === undefined) return undefined;
+    const commits = parseCommitLog(output);
+    const first = commits[0];
+    if (first === undefined) return { commits: [], baselineFiles: [], truncatedCommits: 0 };
+    const total = Number.parseInt(
+      (await this.#git(['rev-list', '--count', '--first-parent', '--no-merges', 'HEAD'])) ?? '',
+      10,
+    );
+    const truncatedCommits = Number.isFinite(total) ? Math.max(0, total - commits.length) : 0;
+    // 窗口被截断时，更早的文件不会出现在任何一条提交里。缺了这份基线，回放会把
+    // 项目原本就有的部分误报成这段窗口里新建的。
+    const baselineFiles =
+      truncatedCommits === 0 ? [] : ((await this.listTreeFiles(`${first.sha}~1`)) ?? []);
+    return { commits, baselineFiles, truncatedCommits };
+  }
+
+  /** 列出某个提交的完整文件树。用于给被截断的历史窗口构造起始基线。 */
+  async listTreeFiles(revision: string): Promise<readonly WorkspacePath[] | undefined> {
+    const output = await this.#git(['ls-tree', '-r', '--name-only', revision]);
+    return output === undefined ? undefined : splitLines(output);
   }
 
   /**
@@ -124,6 +192,57 @@ export class GitAdapter {
       return undefined;
     }
   }
+}
+
+/**
+ * 解析 `git log --raw --numstat` 的输出。
+ *
+ * 每个提交以 `\x01` 开头，头部字段用 `\x1f` 分隔；随后先是 `:` 开头的 raw 行
+ * （提供状态字母），再是 numstat 行（提供增删行数）。二进制文件的行数是 `-`，
+ * 记为 0 而不是让 `NaN` 传播到规模统计里。
+ */
+export function parseCommitLog(output: string): readonly GitCommitLog[] {
+  const commits: GitCommitLog[] = [];
+  for (const block of output.split('\u0001')) {
+    if (block.trim() === '') continue;
+    const [header = '', ...rest] = block.split('\n');
+    const [sha = '', author = '', committedAt = '', ...subject] = header.split('\u001f');
+    if (sha === '') continue;
+    commits.push({
+      sha,
+      author,
+      committedAt,
+      subject: subject.join('\u001f'),
+      files: parseCommitFiles(rest),
+    });
+  }
+  return commits;
+}
+
+/** raw 行给出状态字母（用于识别删除），numstat 行给出行数；两段合并成一份文件清单。 */
+function parseCommitFiles(lines: readonly string[]): readonly GitCommitFile[] {
+  const removed = new Set<WorkspacePath>();
+  const counts = new Map<WorkspacePath, { additions: number; deletions: number }>();
+  for (const line of lines) {
+    if (line.startsWith(':')) {
+      const [meta = '', path = ''] = line.split('\t');
+      if (path !== '' && meta.trimEnd().endsWith('D')) removed.add(path);
+      continue;
+    }
+    const [added = '0', deleted = '0', path = ''] = line.split('\t');
+    if (path !== '') counts.set(path, { additions: countOf(added), deletions: countOf(deleted) });
+  }
+  return [...new Set<WorkspacePath>([...counts.keys(), ...removed])].map((path) => ({
+    path,
+    additions: counts.get(path)?.additions ?? 0,
+    deletions: counts.get(path)?.deletions ?? 0,
+    removed: removed.has(path),
+  }));
+}
+
+function countOf(raw: string): number {
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) ? value : 0;
 }
 
 function parseNameStatus(

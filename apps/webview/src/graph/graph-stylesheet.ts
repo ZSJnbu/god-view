@@ -23,6 +23,15 @@ export function graphStylesheet(): cytoscape.StylesheetJson {
       },
     },
     {
+      // 历史回放用体量表达代码规模。三档离散，最大档仍在布局占位内，不会压住邻居。
+      selector: 'node[magnitude = "small"]',
+      style: { height: 28, 'font-size': 11, padding: '8px' },
+    },
+    {
+      selector: 'node[magnitude = "large"]',
+      style: { height: 52, 'font-size': 14, padding: '16px' },
+    },
+    {
       selector: 'node[trust = "code-verified"]',
       style: {
         'border-width': 2,

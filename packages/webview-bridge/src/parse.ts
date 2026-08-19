@@ -343,6 +343,7 @@ export function parseWebviewCommand(input: unknown): Result<WebviewCommand, Prot
     [
       'ready',
       'requestSnapshot',
+      'requestHistoryTimeline',
       'generateAgentTask',
       'copyAgentSetup',
       'configureAgent',
@@ -430,6 +431,49 @@ function parseFacts(record: Record_): Result<ExtensionEvent, ProtocolError> {
   return requireFactsRevision(record, 'map/facts');
 }
 
+/**
+ * 历史回放时间线。
+ *
+ * 帧数、节点数都有上限：这条消息由扩展一次性推送，缺少上限时一个巨型仓库
+ * 会让 Webview 在解析阶段就卡住。超限直接拒绝，而不是截断后假装完整。
+ */
+const maximumHistoryFrames = 2000;
+const maximumHistoryNodes = 5000;
+
+function parseHistoryTimeline(record: Record_): Result<ExtensionEvent, ProtocolError> {
+  const timeline = asRecord(record['timeline']);
+  if (timeline === undefined) return invalid('history/timeline 缺少 timeline', '/timeline');
+  const frames = timeline['frames'];
+  const nodes = timeline['nodes'];
+  const edges = timeline['edges'];
+  if (!Array.isArray(frames) || frames.length === 0 || frames.length > maximumHistoryFrames)
+    return invalid('history/timeline 的 frames 非法', '/timeline/frames');
+  if (!Array.isArray(nodes) || nodes.length > maximumHistoryNodes || !Array.isArray(edges))
+    return invalid('history/timeline 的 nodes 或 edges 非法', '/timeline/nodes');
+  if (!frames.every(isHistoryFrame))
+    return invalid('history/timeline 的帧缺少必需字段', '/timeline/frames');
+  return isFiniteNumber(timeline['truncatedCommits']) &&
+    isFiniteNumber(timeline['derivedNodeCount'])
+    ? ok(record as unknown as ExtensionEvent)
+    : invalid('history/timeline 缺少 truncatedCommits 或 derivedNodeCount', '/timeline');
+}
+
+function isHistoryFrame(input: unknown): boolean {
+  const frame = asRecord(input);
+  return (
+    frame !== undefined &&
+    isFiniteNumber(frame['index']) &&
+    typeof frame['sha'] === 'string' &&
+    typeof frame['committedAt'] === 'string' &&
+    isFiniteNumber(frame['additions']) &&
+    isFiniteNumber(frame['deletions']) &&
+    isFiniteNumber(frame['commitCount']) &&
+    Array.isArray(frame['presentNodeIds']) &&
+    Array.isArray(frame['changedNodeIds']) &&
+    asRecord(frame['magnitudes']) !== undefined
+  );
+}
+
 /** 解析来自扩展的事件。Webview 同样不信任宿主消息，避免注入伪造状态。 */
 export function parseExtensionEvent(input: unknown): Result<ExtensionEvent, ProtocolError> {
   const record = asRecord(input);
@@ -443,6 +487,8 @@ export function parseExtensionEvent(input: unknown): Result<ExtensionEvent, Prot
       return parsePatch(record);
     case 'map/facts':
       return parseFacts(record);
+    case 'history/timeline':
+      return parseHistoryTimeline(record);
     case 'status':
       return typeof record['state'] === 'string'
         ? ok(record as unknown as ExtensionEvent)

@@ -276,6 +276,72 @@ body {
   font-size: 0.86em;
 }
 
+/* Git 历史回放：与「修改动画回放」并列的独立时间线，同样不遮挡画布 */
+
+.history-replay {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 240px) auto;
+  align-items: center;
+  padding: 8px 14px;
+  background: color-mix(
+    in srgb,
+    var(--vscode-charts-purple, var(--vscode-focusBorder)) 10%,
+    var(--vscode-editorWidget-background)
+  );
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.history-replay__summary {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-replay__summary span {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.86em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-replay__position {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 400;
+}
+
+.history-replay__progress {
+  display: flex;
+  min-width: 0;
+}
+
+.history-replay__progress input {
+  width: 100%;
+}
+
+.history-replay__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.history-replay__actions label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.86em;
+}
+
+@media (width <= 900px) {
+  .history-replay {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .agent-pane {
   display: flex;
   flex: 0 0 auto;

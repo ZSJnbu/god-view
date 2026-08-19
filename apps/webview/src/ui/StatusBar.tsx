@@ -1,6 +1,6 @@
 import type { ActiveChange, CoverageReport, DriftFinding } from '@god-view/protocol';
 import type { SyncState } from '@god-view/webview-bridge';
-import type { AppStore } from '../app-store.js';
+import { isHistoryActive, type AppStore } from '../app-store.js';
 import { useAppState } from './use-app-state.js';
 
 const syncLabels: Record<SyncState, string> = {
@@ -25,10 +25,20 @@ export function StatusBar({ store }: StatusBarProps): React.JSX.Element {
   return (
     <footer className="status" aria-label="同步与覆盖率">
       <span className={`status__sync status__sync--${state.sync}`}>{syncLabels[state.sync]}</span>
-      <span>版本 r{state.map.revision}</span>
-      <CoverageSummary coverage={state.map.coverage} />
-      <DriftSummary drift={state.map.drift} />
-      <ChangeSummary changes={[...state.map.activeChanges.values()]} />
+      {isHistoryActive(state.history) ? (
+        // 历史帧是过去的仓库状态：当前版本号、覆盖率与漂移都不适用于它，不能顺手展示。
+        <span role="status">
+          历史回放 · 第 {state.history.index + 1} / {state.history.frameCount} 帧（覆盖率与漂移只对
+          当前工作区有效，回放期间不显示）
+        </span>
+      ) : (
+        <>
+          <span>版本 r{state.map.revision}</span>
+          <CoverageSummary coverage={state.map.coverage} />
+          <DriftSummary drift={state.map.drift} />
+          <ChangeSummary changes={[...state.map.activeChanges.values()]} />
+        </>
+      )}
       {state.lastError !== undefined && (
         <span className="status__error" role="alert">
           {state.lastError.code}：{state.lastError.message}

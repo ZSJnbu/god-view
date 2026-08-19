@@ -21,6 +21,15 @@ export { reduce } from './reduce.js';
 export { replay } from './replay.js';
 export type { RejectedEvent, ReplayResult } from './replay.js';
 
+export { buildHistoryTimeline } from './history.js';
+export type {
+  BuildHistoryTimelineOptions,
+  HistoryCommit,
+  HistoryCommitFile,
+  HistoryFrame,
+  HistoryTimeline,
+} from './history.js';
+
 export { computeCoverage } from './coverage.js';
 export type {
   CoverageResult,

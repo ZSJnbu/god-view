@@ -78,6 +78,38 @@ export interface AgentPaneView {
 }
 
 /**
+ * 历史回放的一帧。
+ *
+ * 帧只携带节点 id 与规模，节点/关系本体在时间线上只出现一次，避免消息体随帧数放大。
+ */
+export interface HistoryFrameView {
+  readonly index: number;
+  readonly sha: string;
+  readonly shortSha: string;
+  readonly author: string;
+  readonly committedAt: string;
+  readonly subject: string;
+  readonly additions: number;
+  readonly deletions: number;
+  /** 该帧合并了多少次提交；大于 1 表示因帧数上限而聚合。 */
+  readonly commitCount: number;
+  readonly fileCount: number;
+  readonly presentNodeIds: readonly Identifier[];
+  readonly changedNodeIds: readonly Identifier[];
+  readonly magnitudes: Readonly<Record<Identifier, number>>;
+}
+
+export interface HistoryTimelineView {
+  readonly nodes: readonly GraphNode[];
+  readonly edges: readonly GraphEdge[];
+  readonly frames: readonly HistoryFrameView[];
+  /** 超出回放窗口、未被回放的更早提交数。 */
+  readonly truncatedCommits: number;
+  /** 未被地图覆盖、按目录推断出来的节点数。UI 必须说明它们不是声明结果。 */
+  readonly derivedNodeCount: number;
+}
+
+/**
  * 扩展 → Webview。
  *
  * 图与事实是**两条独立的时间线**，各自有单调递增的版本号：
@@ -115,6 +147,11 @@ export type ExtensionEvent =
       readonly drift: readonly DriftFinding[];
       readonly coverage?: CoverageReport;
     }
+  | {
+      /** Git 历史回放的完整时间线；扩展只读 Git，不改工作区。 */
+      readonly type: 'history/timeline';
+      readonly timeline: HistoryTimelineView;
+    }
   | { readonly type: 'status'; readonly state: SyncState; readonly detail?: string }
   | {
       readonly type: 'agent/status';
@@ -127,6 +164,7 @@ export type ExtensionEvent =
 export type WebviewCommand =
   | { readonly type: 'ready' }
   | { readonly type: 'requestSnapshot' }
+  | { readonly type: 'requestHistoryTimeline' }
   | { readonly type: 'generateAgentTask' }
   | { readonly type: 'copyAgentSetup' }
   | { readonly type: 'configureAgent'; readonly agent: 'codex' | 'claude-code' }

@@ -9,10 +9,9 @@ import type {
 import type { GuidedStoryStep, Identifier } from '@god-view/protocol';
 import type { LayoutPositions } from '../model/store.js';
 import type { VisibleGraph } from '../model/view-model.js';
-import { badgesFor, isFailed, isInProgress, nodeTypeLabels } from '../model/presentation.js';
-import { edgeTypeLabels } from '../model/edge-presentation.js';
 import { routeEdges } from './edge-routing.js';
 import { graphStylesheet } from './graph-stylesheet.js';
+import { toElements } from './graph-elements.js';
 import { measureRouting } from './routing-metrics.js';
 import {
   countNodeOverlaps,
@@ -46,6 +45,13 @@ export interface RenderOptions {
   readonly topologyRevision: number;
   readonly changedNodeIds: readonly Identifier[];
   readonly changedEdgeIds: readonly Identifier[];
+  /**
+   * 节点规模（历史回放用累计代码行 + 文件数）。
+   *
+   * 只影响节点显示大小，不进入布局占位：布局按固定占位排布，连续缩放会让相邻
+   * 节点开始重叠。缺省时所有节点使用同一尺寸，与历史回放之外的行为一致。
+   */
+  readonly nodeMagnitudes?: Readonly<Record<Identifier, number>>;
 }
 
 interface ElementData {
@@ -86,7 +92,7 @@ export class CytoscapeAdapter {
     this.#visibleGraph = graph;
     this.#container.dataset['topologyRevision'] = String(options.topologyRevision);
     this.#container.dataset['inlineEdgeLabels'] = 'false';
-    const elements = toElements(graph, options.positions);
+    const elements = toElements(graph, options.positions, options.nodeMagnitudes);
     const token = ++this.#transitionToken;
     this.#cy.elements().stop(true, false);
     this.#cy.stop(true, false);
@@ -170,7 +176,9 @@ export class CytoscapeAdapter {
           Math.abs(current.position('y') - target.y) > 0.5)
       );
     });
-    const newEdges = [...newIds].some((id) => !this.#cy.getElementById(id).empty() && this.#cy.getElementById(id).isEdge());
+    const newEdges = [...newIds].some(
+      (id) => !this.#cy.getElementById(id).empty() && this.#cy.getElementById(id).isEdge(),
+    );
 
     // 只有结构或坐标真的变化时才启动转场；文本/状态补丁只更新数据并立即完成，
     // 避免每次 MCP 事实更新都让整张图重新淡入淡出。
@@ -536,101 +544,6 @@ function entryPosition(
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function toElements(graph: VisibleGraph, positions: LayoutPositions): ElementDefinition[] {
-  const colors = assignModuleColors(graph);
-  const nodes: ElementDefinition[] = graph.nodes.map(({ node, rolledUpCount }) => {
-    const badges = badgesFor(node);
-    const position = positions[node.id];
-    const color = colors.get(node.id) ?? defaultModuleColor;
-    return {
-      group: 'nodes',
-      data: {
-        id: node.id,
-        label: rolledUpCount > 0 ? `${node.label}  (+${String(rolledUpCount)})` : node.label,
-        kind: nodeTypeLabels[node.type],
-        trust: badges.trust,
-        state: isFailed(node) ? 'failed' : isInProgress(node) ? 'pending' : 'settled',
-        fillColor: color.fill,
-        edgeColor: color.edge,
-        textColor: color.text,
-      },
-      ...(position === undefined ? {} : { position: { x: position.x, y: position.y } }),
-    };
-  });
-
-  const edges: ElementDefinition[] = graph.edges.map((edge) => {
-    return {
-      group: 'edges',
-      data: {
-        id: edge.id,
-        source: edge.from,
-        target: edge.to,
-        color: (colors.get(edge.from) ?? defaultModuleColor).edge,
-        relationTitle: `${edgeTypeLabels[edge.type]}${edge.count > 1 ? ` ×${String(edge.count)}` : ''}`,
-        description: shorten(edge.description, 180),
-      },
-    };
-  });
-
-  return [...nodes, ...edges];
-}
-
-function shorten(value: string, limit: number): string {
-  return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
-}
-
-interface ModuleColor {
-  readonly fill: string;
-  readonly edge: string;
-  readonly text: string;
-}
-
-const modulePalette: readonly ModuleColor[] = [
-  { fill: '#1d4ed8', edge: '#60a5fa', text: '#ffffff' },
-  { fill: '#047857', edge: '#34d399', text: '#ffffff' },
-  { fill: '#6d28d9', edge: '#a78bfa', text: '#ffffff' },
-  { fill: '#9a3412', edge: '#fb923c', text: '#ffffff' },
-  { fill: '#be123c', edge: '#fb7185', text: '#ffffff' },
-  { fill: '#0e7490', edge: '#22d3ee', text: '#ffffff' },
-  { fill: '#3f6212', edge: '#a3e635', text: '#ffffff' },
-  { fill: '#7e22ce', edge: '#d8b4fe', text: '#ffffff' },
-  { fill: '#334155', edge: '#94a3b8', text: '#ffffff' },
-  { fill: '#a16207', edge: '#facc15', text: '#ffffff' },
-  { fill: '#0f766e', edge: '#5eead4', text: '#ffffff' },
-  { fill: '#4338ca', edge: '#818cf8', text: '#ffffff' },
-];
-const defaultModuleColor: ModuleColor = modulePalette[0] ?? {
-  fill: '#1d4ed8',
-  edge: '#60a5fa',
-  text: '#ffffff',
-};
-
-function assignModuleColors(graph: VisibleGraph): ReadonlyMap<Identifier, ModuleColor> {
-  const result = new Map<Identifier, ModuleColor>();
-  const used = new Set<number>();
-  for (const { node } of [...graph.nodes].sort((left, right) =>
-    left.node.id.localeCompare(right.node.id),
-  )) {
-    const preferred = stableHash(node.id) % modulePalette.length;
-    let slot = preferred;
-    while (used.has(slot) && used.size < modulePalette.length) {
-      slot = (slot + 1) % modulePalette.length;
-    }
-    used.add(slot);
-    result.set(node.id, modulePalette[slot] ?? defaultModuleColor);
-  }
-  return result;
-}
-
-function stableHash(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
 }
 
 function segmentControls(

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GuidedStoryStep, Identifier } from '@god-view/protocol';
-import { activeStoryStep, type AppStore } from '../app-store.js';
+import { activeStoryStep, isHistoryActive, type AppStore } from '../app-store.js';
 import type { LayoutPositions } from '../model/store.js';
 import type { LayoutClient } from '../layout/layout-client.js';
 import { toLayoutRequest } from '../layout/layout-input.js';
@@ -129,17 +129,18 @@ export function GraphCanvas(props: GraphCanvasProps): React.JSX.Element {
       cached.topologyRevision === state.topologyRevision
         ? cached.positions
         : undefined;
-    void (cachedPositions === undefined
-      ? layoutClient.compute(toLayoutRequest(graph, state.map.layout)).then((result) => {
-          layoutCacheRef.current = {
-            graphKey,
-            layout: state.map.layout,
-            topologyRevision: state.topologyRevision,
-            positions: result.positions,
-          };
-          return result.positions;
-        })
-      : Promise.resolve(cachedPositions)
+    void (
+      cachedPositions === undefined
+        ? layoutClient.compute(toLayoutRequest(graph, state.map.layout)).then((result) => {
+            layoutCacheRef.current = {
+              graphKey,
+              layout: state.map.layout,
+              topologyRevision: state.topologyRevision,
+              positions: result.positions,
+            };
+            return result.positions;
+          })
+        : Promise.resolve(cachedPositions)
     ).then(async (positions) => {
       if (cancelled) {
         return;
@@ -152,6 +153,8 @@ export function GraphCanvas(props: GraphCanvasProps): React.JSX.Element {
         topologyRevision: state.topologyRevision,
         changedNodeIds: state.changedNodeIds,
         changedEdgeIds: state.changedEdgeIds,
+        // 只有历史回放提供规模；live 地图保持统一尺寸，行为不变。
+        ...(isHistoryActive(state.history) ? { nodeMagnitudes: state.history.magnitudes } : {}),
       });
       if (!completed) return;
       adapter.setStoryStep(storyRef.current.step, storyRef.current.reducedMotion);
@@ -180,6 +183,8 @@ export function GraphCanvas(props: GraphCanvasProps): React.JSX.Element {
     state.topologyRevision,
     state.changedNodeIds,
     state.changedEdgeIds,
+    state.history.status,
+    state.history.magnitudes,
     viewKey,
   ]);
 

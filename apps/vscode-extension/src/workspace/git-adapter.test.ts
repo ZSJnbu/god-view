@@ -180,3 +180,60 @@ describe('diffSummary', () => {
     expect(summary?.files).toEqual([]);
   });
 });
+
+describe('readHistory', () => {
+  it('按时间正序返回提交、增删行数与删除标记', async () => {
+    await writeSource('src/c.ts', 'export const c = 1;\nexport const d = 2;\n');
+    await inRepo(['add', '-A']);
+    await inRepo(['commit', '-qm', 'add c']);
+    await rm(join(root, 'src/b.ts'));
+    await inRepo(['add', '-A']);
+    await inRepo(['commit', '-qm', 'remove b']);
+
+    const history = await git.readHistory({ limit: 10 });
+
+    expect(history?.commits.map((commit) => commit.subject)).toEqual(['init', 'add c', 'remove b']);
+    expect(history?.truncatedCommits).toBe(0);
+    expect(history?.commits[1]?.files).toEqual([
+      { path: 'src/c.ts', additions: 2, deletions: 0, removed: false },
+    ]);
+    expect(history?.commits[2]?.files).toEqual([
+      { path: 'src/b.ts', additions: 0, deletions: 1, removed: true },
+    ]);
+    expect(history?.commits[0]?.author).toBe('test');
+  });
+
+  it('超出窗口时报告被截断的提交数，并给出窗口起点前的文件基线', async () => {
+    await writeSource('src/c.ts');
+    await inRepo(['add', '-A']);
+    await inRepo(['commit', '-qm', 'add c']);
+
+    const history = await git.readHistory({ limit: 1 });
+
+    expect(history?.commits).toHaveLength(1);
+    expect(history?.commits[0]?.subject).toBe('add c');
+    expect(history?.truncatedCommits).toBe(1);
+    expect([...(history?.baselineFiles ?? [])].sort()).toEqual(['src/a.ts', 'src/b.ts']);
+  });
+
+  it('二进制文件的行数记为 0 而不是 NaN', async () => {
+    await writeFile(join(root, 'logo.bin'), Buffer.from([0, 1, 2, 3, 0]));
+    await inRepo(['add', '-A']);
+    await inRepo(['commit', '-qm', 'add binary']);
+
+    const history = await git.readHistory({ limit: 1 });
+
+    expect(history?.commits[0]?.files).toEqual([
+      { path: 'logo.bin', additions: 0, deletions: 0, removed: false },
+    ]);
+  });
+
+  it('非 Git 目录返回 undefined，由调用方如实告知回放不可用', async () => {
+    const plain = await mkdtemp(join(tmpdir(), 'god-view-plain-'));
+    try {
+      await expect(new GitAdapter(plain).readHistory({ limit: 10 })).resolves.toBeUndefined();
+    } finally {
+      await rm(plain, { recursive: true, force: true });
+    }
+  });
+});

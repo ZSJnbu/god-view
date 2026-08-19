@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Identifier } from '@god-view/protocol';
 import type { AppStore } from '../app-store.js';
 import type { Messenger } from '../messaging.js';
@@ -18,6 +18,7 @@ import { ResizableAgentPane } from './ResizableAgentPane.js';
 import { FloatingAgentPane } from './FloatingAgentPane.js';
 import { ViewContext } from './ViewContext.js';
 import { MapPlaybackControls } from './MapPlaybackControls.js';
+import { HistoryReplay } from './HistoryReplay.js';
 import { useAppState } from './use-app-state.js';
 
 export interface AppProps {
@@ -38,6 +39,7 @@ export function App({
 }: AppProps): React.JSX.Element {
   const state = useAppState(store);
   const [topologicalSortBusy, setTopologicalSortBusy] = useState(false);
+  const historyLayoutKeyRef = useRef<string | undefined>(undefined);
   const configuredAgent =
     state.agents.find(
       (item) => item.agent === state.selectedAgent && item.configuration === 'current',
@@ -90,6 +92,33 @@ export function App({
     messenger.send({ type: 'configureAgent', agent: candidate.agent });
   }, [messenger, refreshAgentStatus, state.agents, state.selectedAgent]);
 
+  const replayHistory = useCallback(() => {
+    store.beginHistoryLoad();
+    messenger.send({ type: 'requestHistoryTimeline' });
+  }, [messenger, store]);
+
+  /**
+   * 历史回放的坐标只算一次。
+   *
+   * 按最终帧布局并全程固定：如果每帧都重新布局，节点会随着邻居增减不停跳动，
+   * 用户就看不出这一帧究竟长出了什么。切换绘图层级时需要重算一次。
+   */
+  useEffect(() => {
+    if (state.history.status === 'idle' || state.history.frameCount === 0) {
+      historyLayoutKeyRef.current = undefined;
+      return;
+    }
+    const key = `${String(state.history.frameCount)}:${state.view.level}`;
+    if (historyLayoutKeyRef.current === key) return;
+    const finalMap = store.historyFinalMap();
+    if (finalMap === undefined) return;
+    historyLayoutKeyRef.current = key;
+    const graph = buildVisibleGraph(finalMap, { level: state.view.level });
+    void layoutClient.compute(toLayoutRequest(graph, {})).then(({ positions }) => {
+      store.setHistoryLayout(positions);
+    });
+  }, [layoutClient, state.history.status, state.history.frameCount, state.view.level, store]);
+
   const topologicalSort = useCallback(() => {
     if (topologicalSortBusy) return;
     setTopologicalSortBusy(true);
@@ -133,7 +162,10 @@ export function App({
           onStartInitialization={(agent) => {
             messenger.send({ type: 'startInitialization', agent });
           }}
+          onReplayHistory={replayHistory}
+          hasGit={state.map.capabilities?.hasGit ?? false}
         />
+        <HistoryReplay store={store} onRetry={replayHistory} />
         <MapPlaybackControls store={store} />
         <StatusBar store={store} />
       </main>
@@ -158,6 +190,7 @@ export function App({
         }}
         topologicalSortBusy={topologicalSortBusy}
         hasConfiguredAgent={state.agents.some((item) => item.configuration === 'current')}
+        onReplayHistory={replayHistory}
         onReinitialize={() => {
           const agent =
             state.agents.find(
@@ -171,6 +204,7 @@ export function App({
         }}
       />
       <StoryPlayer store={store} />
+      <HistoryReplay store={store} onRetry={replayHistory} />
       <ViewContext store={store} />
       <div className="app__body">
         <GraphCanvas

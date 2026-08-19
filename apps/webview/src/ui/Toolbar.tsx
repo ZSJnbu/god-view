@@ -21,6 +21,7 @@ export interface ToolbarProps {
   readonly onReinitialize: () => void;
   readonly onTopologicalSort: () => void;
   readonly onCompleteLevel: (target: 'groups' | 'files') => void;
+  readonly onReplayHistory: () => void;
   readonly topologicalSortBusy: boolean;
   readonly hasConfiguredAgent: boolean;
 }
@@ -30,6 +31,7 @@ export function Toolbar({
   onReinitialize,
   onTopologicalSort,
   onCompleteLevel,
+  onReplayHistory,
   topologicalSortBusy,
   hasConfiguredAgent,
 }: ToolbarProps): React.JSX.Element {
@@ -106,6 +108,13 @@ export function Toolbar({
         {topologicalSortBusy ? '正在整理…' : '拓扑排序'}
       </button>
 
+      {/* 回放读取的是仓库自己的提交历史，因此无 Git 工作区时明确禁用而不是假装可用。 */}
+      <HistoryReplayButton
+        hasGit={capabilities?.hasGit === true}
+        loading={state.history.status === 'loading'}
+        onReplayHistory={onReplayHistory}
+      />
+
       {state.view.focusNodeId !== undefined && (
         <div className="toolbar__group toolbar__focus" aria-label="局部视图范围">
           {([1, 2] as const).map((depth) => (
@@ -166,5 +175,27 @@ export function Toolbar({
         {capabilities?.hasGit === true ? capabilities.branchKey : '无 Git 工作区'}
       </span>
     </header>
+  );
+}
+
+function HistoryReplayButton(props: {
+  readonly hasGit: boolean;
+  readonly loading: boolean;
+  readonly onReplayHistory: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className="chip chip--history"
+      disabled={!props.hasGit || props.loading}
+      title={
+        props.hasGit
+          ? '按提交顺序回放这个项目是怎么一点点长起来的'
+          : '当前不是 Git 工作区，没有可回放的提交历史'
+      }
+      onClick={props.onReplayHistory}
+    >
+      {props.loading ? '正在读取历史…' : '历史回放'}
+    </button>
   );
 }

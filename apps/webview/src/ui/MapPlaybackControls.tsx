@@ -79,8 +79,8 @@ export function MapPlaybackControls(props: { readonly store: AppStore }): React.
           onClick={() => {
             props.store.replayMapSession();
           }}
-          >
-            播放修改动画
+        >
+          播放修改动画
         </button>
         <button
           type="button"

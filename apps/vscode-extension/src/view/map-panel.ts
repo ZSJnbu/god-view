@@ -181,6 +181,10 @@ export class MapPanel {
       await this.#refreshAgentStatus();
       return;
     }
+    if (parsed.value.type === 'requestHistoryTimeline') {
+      await this.#sendHistoryTimeline();
+      return;
+    }
     if (isChangeCommand(parsed.value)) {
       await this.#handleChangeCommand(parsed.value);
       return;
@@ -591,6 +595,32 @@ export class MapPanel {
     if (command.autoStartAgent !== undefined) {
       await this.#startApprovedChange(command.autoStartAgent, command.proposalId);
     }
+  }
+
+  /**
+   * 读取 Git 历史并推送回放时间线。
+   *
+   * 读不到时如实报错：宁可告诉用户「这个工作区没有可回放的 Git 历史」，
+   * 也不推一条空时间线让 UI 显示成「项目从零开始且什么都没发生」。
+   */
+  async #sendHistoryTimeline(): Promise<void> {
+    this.#post({ type: 'status', state: 'receiving', detail: 'history-loading' });
+    const timeline = await this.#service.readHistoryTimeline();
+    if (timeline === undefined) {
+      this.#post({
+        type: 'error',
+        code: 'HISTORY_UNAVAILABLE',
+        message: '当前工作区没有可回放的 Git 历史（无 Git 仓库、无提交，或提交只涉及被排除的文件）',
+      });
+      return;
+    }
+    this.#logger.info('history.timeline.sent', {
+      frames: timeline.frames.length,
+      nodes: timeline.nodes.length,
+      derivedNodes: timeline.derivedNodeCount,
+      truncatedCommits: timeline.truncatedCommits,
+    });
+    this.#post({ type: 'history/timeline', timeline });
   }
 
   #sendSnapshot(): void {

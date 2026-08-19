@@ -15,8 +15,18 @@ import {
   type LayoutPositions,
   type MapState,
 } from './model/store.js';
+import {
+  idleHistoryState,
+  isHistoryActive,
+  type HistoryReplayState,
+  type HistorySpeed,
+} from './model/history-playback.js';
+import { HistoryReplayController } from './model/history-controller.js';
 import type { DetailLevel, ViewOptions } from './model/view-model.js';
 import { resolveVisibleAnchor } from './model/view-model.js';
+
+export { isHistoryActive } from './model/history-playback.js';
+export type { HistoryReplayState, HistorySpeed } from './model/history-playback.js';
 
 export interface AppState {
   readonly map: MapState;
@@ -36,6 +46,8 @@ export interface AppState {
   /** 用户点击拓扑排序后递增；让画布在节点移动完成后再适配全图。 */
   readonly topologyRevision: number;
   readonly playback: MapPlaybackState;
+  /** Git 历史回放，与 {@link MapPlaybackState} 是两条独立的时间线。 */
+  readonly history: HistoryReplayState;
 }
 
 export interface MapPlaybackState {
@@ -75,6 +87,7 @@ const initialAppState: AppState = {
   viewportRevision: 0,
   topologyRevision: 0,
   playback: playbackState(0),
+  history: idleHistoryState,
 };
 
 type Listener = () => void;
@@ -97,6 +110,17 @@ export class AppStore {
   #sessionFrames: MapPatchEvent[] = [];
   #sessionBaseline: MapState | undefined;
   #playbackTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly #history = new HistoryReplayController({
+    history: () => this.#state.history,
+    currentMap: () => this.#state.map,
+    capabilities: () => this.#authoritativeMap.capabilities,
+    apply: (patch) => {
+      this.#set(patch);
+    },
+    restoreLiveMap: () => {
+      this.showLatestMapRevision();
+    },
+  });
 
   getState = (): AppState => this.#state;
 
@@ -116,6 +140,9 @@ export class AppStore {
       case 'map/patch':
         this.#receiveMapPatch(event);
         return;
+      case 'history/timeline':
+        this.#history.receiveTimeline(event.timeline);
+        return;
       case 'map/facts':
         // 图没变、只有事实变了：不能走补丁路径，那条路径按图版本排序会丢弃它。
         this.#authoritativeMap = applyFacts(this.#authoritativeMap, {
@@ -124,11 +151,14 @@ export class AppStore {
           ...(event.coverage === undefined ? {} : { coverage: event.coverage }),
         });
         this.#set({
-          map: applyFacts(this.#state.map, {
-            factsRevision: event.factsRevision,
-            drift: event.drift,
-            ...(event.coverage === undefined ? {} : { coverage: event.coverage }),
-          }),
+          // 历史帧描述的是过去的仓库状态，不能挂上当前工作区的漂移与覆盖率。
+          map: isHistoryActive(this.#state.history)
+            ? this.#state.map
+            : applyFacts(this.#state.map, {
+                factsRevision: event.factsRevision,
+                drift: event.drift,
+                ...(event.coverage === undefined ? {} : { coverage: event.coverage }),
+              }),
           sync: 'idle',
         });
         return;
@@ -143,7 +173,13 @@ export class AppStore {
         return;
       case 'error':
         // 错误只记录，不清空地图：已经画出来的内容仍然是有效信息。
-        this.#set({ lastError: { code: event.code, message: event.message }, sync: 'degraded' });
+        this.#set({
+          lastError: { code: event.code, message: event.message },
+          sync: 'degraded',
+          ...(this.#state.history.status === 'loading'
+            ? { history: { ...idleHistoryState, status: 'error' as const, message: event.message } }
+            : {}),
+        });
         return;
     }
   }
@@ -168,7 +204,8 @@ export class AppStore {
       ...(event.layout === undefined ? {} : { layout: event.layout }),
     });
     this.#set({
-      map: this.#authoritativeMap,
+      // 历史回放期间画布属于历史帧：新快照只更新权威地图，退出回放后再呈现。
+      map: isHistoryActive(this.#state.history) ? this.#state.map : this.#authoritativeMap,
       sync: 'idle',
       changedNodeIds: [],
       changedEdgeIds: [],
@@ -278,6 +315,45 @@ export class AppStore {
       this.#cancelPlaybackTimer();
       this.#scheduleNextPatch();
     }
+  }
+
+  /** 用户点击「历史回放」：先进入加载态，时间线由扩展读取 Git 后推送回来。 */
+  beginHistoryLoad(): void {
+    this.#cancelPlaybackTimer();
+    this.#set({ lastError: undefined });
+    this.#history.beginLoad();
+  }
+
+  playHistory(): void {
+    this.#history.play();
+  }
+
+  pauseHistory(): void {
+    this.#history.pause();
+  }
+
+  stepHistory(delta: -1 | 1): void {
+    this.#history.step(delta);
+  }
+
+  seekHistory(index: number): void {
+    this.#history.seek(index);
+  }
+
+  setHistorySpeed(speed: HistorySpeed): void {
+    this.#history.setSpeed(speed);
+  }
+
+  setHistoryLayout(positions: LayoutPositions): void {
+    this.#history.setLayout(positions);
+  }
+
+  exitHistory(): void {
+    this.#history.exit();
+  }
+
+  historyFinalMap(): MapState | undefined {
+    return this.#history.finalMap();
   }
 
   setQuery(query: string): void {
@@ -477,6 +553,20 @@ export class AppStore {
     this.#sessionFrames.push(event);
     if (this.#sessionFrames.length > maximumSessionFrames) this.#sessionFrames.shift();
     this.#pendingPatches.push(event);
+    if (isHistoryActive(this.#state.history)) {
+      // 历史回放占用画布：补丁只累积进权威地图与待播队列，退出回放后再呈现。
+      this.#set({
+        sync: 'idle',
+        playback: {
+          ...this.#state.playback,
+          status: 'paused',
+          authoritativeRevision: this.#authoritativeMap.revision,
+          pendingCount: this.#pendingPatches.length,
+          sessionFrameCount: this.#sessionFrames.length,
+        },
+      });
+      return;
+    }
     if (this.#authoritativeMap.capabilities?.reducedMotion === true) {
       this.showLatestMapRevision();
       return;

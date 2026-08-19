@@ -693,6 +693,28 @@ test('仅凭 MCP 地图补丁即可暂停、逐步并回放 AI 对画布的调�
   await expect(timeline).toContainText('画面 r3');
 });
 
+test('从工具栏进入 Git 历史回放，逐帧、拖动进度并退出', async ({ page }) => {
+  await page.getByRole('button', { name: '历史回放' }).click();
+
+  const replay = page.getByRole('region', { name: '项目历史回放' });
+  await expect(replay).toContainText('第 1 / 3 帧');
+  await expect(replay).toContainText('第 1 次提交');
+  await expect(replay).toContainText('更早的 4 次提交未包含在内');
+  await expect(page.getByRole('status').filter({ hasText: '当前绘制 1 个节点' })).toBeVisible();
+
+  await replay.getByRole('button', { name: '下一帧' }).click();
+  await expect(replay).toContainText('第 2 / 3 帧');
+  await expect(page.getByRole('status').filter({ hasText: '当前绘制 2 个节点' })).toBeVisible();
+
+  await replay.getByRole('slider', { name: '历史进度' }).fill('2');
+  await expect(replay).toContainText('第 3 / 3 帧');
+  await expect(replay).toContainText('本帧合并了 3 次提交');
+
+  await replay.getByRole('button', { name: '退出回放' }).click();
+  await expect(page.getByRole('region', { name: '项目历史回放' })).toBeHidden();
+  await expect(page.getByRole('status').filter({ hasText: '当前绘制 3 个节点' })).toBeVisible();
+});
+
 test('创建解释标注、预览上下文、接收安全答案并解决', async ({ page }) => {
   await page.getByRole('searchbox', { name: '搜索节点' }).fill('Orders');
   await page.getByRole('button', { name: /Orders/u }).click();

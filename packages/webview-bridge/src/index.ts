@@ -10,6 +10,8 @@ export type {
   ConfigurableAgent,
   ExtensionEvent,
   ExtensionEventType,
+  HistoryFrameView,
+  HistoryTimelineView,
   MapPatch,
   SyncState,
   ViewCapabilities,

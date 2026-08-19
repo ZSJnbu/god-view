@@ -3,13 +3,16 @@ import { errorCodes } from '@god-view/protocol';
 import { parseExtensionEvent, parseWebviewCommand } from './parse.js';
 
 describe('Webview 命令解析', () => {
-  it.each([['ready'], ['requestSnapshot'], ['generateAgentTask'], ['copyAgentSetup']])(
-    '接受无参数命令 %s',
-    (type) => {
-      const result = parseWebviewCommand({ type });
-      expect(result.ok).toBe(true);
-    },
-  );
+  it.each([
+    ['ready'],
+    ['requestSnapshot'],
+    ['requestHistoryTimeline'],
+    ['generateAgentTask'],
+    ['copyAgentSetup'],
+  ])('接受无参数命令 %s', (type) => {
+    const result = parseWebviewCommand({ type });
+    expect(result.ok).toBe(true);
+  });
 
   it('接受带行号的 openSource', () => {
     const result = parseWebviewCommand({
@@ -376,4 +379,58 @@ describe('扩展事件解析', () => {
       expect(parseExtensionEvent(input).ok).toBe(false);
     },
   );
+
+  it('接受历史回放时间线', () => {
+    expect(parseExtensionEvent(historyEvent()).ok).toBe(true);
+  });
+
+  it.each([
+    ['缺少 timeline', { type: 'history/timeline' }],
+    ['帧为空', historyEvent({ frames: [] })],
+    ['帧缺少必需字段', historyEvent({ frames: [{ index: 0, sha: 'a' }] })],
+    ['nodes 不是数组', historyEvent({ nodes: 'x' })],
+    ['缺少截断说明', historyEvent({ truncatedCommits: undefined })],
+  ])('拒绝非法的历史时间线：%s', (_name, input) => {
+    expect(parseExtensionEvent(input).ok).toBe(false);
+  });
+
+  it('拒绝帧数超过上限的历史时间线，而不是截断后假装完整', () => {
+    const frames = Array.from({ length: 2001 }, (_unused, index) => ({
+      ...historyFrame(),
+      index,
+    }));
+    expect(parseExtensionEvent(historyEvent({ frames })).ok).toBe(false);
+  });
 });
+
+function historyFrame(): Record<string, unknown> {
+  return {
+    index: 0,
+    sha: 'abcdef1234',
+    shortSha: 'abcdef1',
+    author: 'tester',
+    committedAt: '2026-01-01T00:00:00.000Z',
+    subject: 'init',
+    additions: 4,
+    deletions: 0,
+    commitCount: 1,
+    fileCount: 1,
+    presentNodeIds: ['a'],
+    changedNodeIds: ['a'],
+    magnitudes: { a: 4 },
+  };
+}
+
+function historyEvent(overrides: Record<string, unknown> = {}): unknown {
+  return {
+    type: 'history/timeline',
+    timeline: {
+      nodes: [],
+      edges: [],
+      frames: [historyFrame()],
+      truncatedCommits: 0,
+      derivedNodeCount: 1,
+      ...overrides,
+    },
+  };
+}

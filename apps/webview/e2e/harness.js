@@ -249,6 +249,40 @@
     snapshot.coverage.unclassified = 0;
   }
 
+  /** Git 历史回放的固定时间线：三次提交里模块逐个出现、体量逐步变大。 */
+  function historyTimelineEvent(current, at) {
+    const ids = current.document.nodes.map((node) => node.id);
+    const frame = (index, present, changed, magnitudes) => ({
+      index,
+      sha: `0000000000000000000000000000000000000${index}`,
+      shortSha: `commit${index}`,
+      author: 'God View 测试',
+      committedAt: at,
+      subject: `第 ${index + 1} 次提交`,
+      additions: 40 + index * 10,
+      deletions: index,
+      commitCount: index === 2 ? 3 : 1,
+      fileCount: index + 1,
+      presentNodeIds: present,
+      changedNodeIds: changed,
+      magnitudes,
+    });
+    return {
+      type: 'history/timeline',
+      timeline: {
+        nodes: current.document.nodes,
+        edges: current.document.edges,
+        frames: [
+          frame(0, ids.slice(0, 1), ids.slice(0, 1), { [ids[0]]: 20 }),
+          frame(1, ids.slice(0, 2), ids.slice(1, 2), { [ids[0]]: 40, [ids[1]]: 15 }),
+          frame(2, ids, ids.slice(2), { [ids[0]]: 60, [ids[1]]: 120, [ids[2]]: 30 }),
+        ],
+        truncatedCommits: 4,
+        derivedNodeCount: 0,
+      },
+    };
+  }
+
   window.__godViewCommands = [];
   window.__godViewSnapshot = snapshot;
   window.acquireVsCodeApi = () => ({
@@ -259,6 +293,13 @@
       if (command.type === 'ready' || command.type === 'requestSnapshot') {
         queueMicrotask(() => {
           window.dispatchEvent(new MessageEvent('message', { data: snapshot }));
+        });
+      }
+      if (command.type === 'requestHistoryTimeline') {
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new MessageEvent('message', { data: historyTimelineEvent(snapshot, timestamp) }),
+          );
         });
       }
       if (command.type === 'ready' || command.type === 'refreshAgentStatus') {

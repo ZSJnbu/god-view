@@ -20,7 +20,7 @@ import {
 } from '@god-view/protocol';
 import { writeFileAtomic } from '@god-view/storage';
 import { detectDrift, type ValidationOutcome } from '@god-view/validation-core';
-import type { ViewCapabilities } from '@god-view/webview-bridge';
+import type { ViewCapabilities, HistoryTimelineView } from '@god-view/webview-bridge';
 import { GitAdapter, type GitState } from '../workspace/git-adapter.js';
 import { InventoryBuilder } from '../workspace/inventory-builder.js';
 import { VsCodeWorkspaceProbe } from '../workspace/workspace-probe.js';
@@ -30,6 +30,7 @@ import { OperationQueue } from './operation-queue.js';
 import { affectedNodeIds } from './path-impact.js';
 import { diffSnapshots, isEmptyPatch } from './map-patch.js';
 import { buildAnnotationContext } from './annotation-context.js';
+import { buildWorkspaceHistory } from './history-timeline.js';
 import { isApprovalFailure, prepareApproval, type ApprovalFailure } from './proposal-approval.js';
 import type { MapServiceOptions, MapUpdate } from './map-service-types.js';
 import {
@@ -209,6 +210,22 @@ export class MapService {
 
   async refreshFacts(changedPaths?: readonly string[]): Promise<void> {
     await this.#queue.run('facts.refresh', () => this.#refreshFactsNow(changedPaths));
+  }
+
+  /**
+   * 读取 Git 历史回放时间线。
+   *
+   * 纯读取：不写事件日志、不改快照，也不会推进图版本。无 Git 或没有第一方提交时
+   * 返回 undefined，由调用方如实告诉用户回放不可用。
+   */
+  async readHistoryTimeline(): Promise<HistoryTimelineView | undefined> {
+    const repository = this.#binding.repositoryOrUndefined;
+    if (repository === undefined) return undefined;
+    return buildWorkspaceHistory({
+      git: this.#git,
+      snapshot: repository.snapshot,
+      extraExcludes: this.#options.extraExcludes,
+    });
   }
 
   async createAnnotation(input: {
