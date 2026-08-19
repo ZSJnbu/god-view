@@ -636,6 +636,13 @@ test('讲解可播放、暂停、切换速度、逐步导航和退出', async ({
   await expect(page.getByRole('region', { name: '项目讲解' })).toBeVisible();
 });
 
+test('没有地图补丁时仍显示修改动画回放入口', async ({ page }) => {
+  const timeline = page.getByRole('region', { name: '修改动画回放' });
+  await expect(timeline).toBeVisible();
+  await expect(timeline).toContainText('Agent 产生地图补丁后');
+  await expect(timeline.getByRole('button', { name: '播放修改动画' })).toBeDisabled();
+});
+
 test('仅凭 MCP 地图补丁即可暂停、逐步并回放 AI 对画布的调整', async ({ page }) => {
   await page.evaluate(() => {
     const harness = window as unknown as {
@@ -673,15 +680,15 @@ test('仅凭 MCP 地图补丁即可暂停、逐步并回放 AI 对画布的调�
     }
   });
 
-  const timeline = page.getByRole('region', { name: '地图变更时间线' });
+  const timeline = page.getByRole('region', { name: '修改动画回放' });
   await expect(timeline).toContainText('权威 r5');
   await timeline.getByRole('button', { name: '暂停' }).click();
   await timeline.getByRole('button', { name: '下一步' }).click();
   await expect(timeline).toContainText('画面 r4');
   await timeline.getByRole('button', { name: '跳到最新' }).click();
   await expect(timeline).toContainText('画面 r5');
-  await timeline.getByRole('button', { name: '回放画布调整' }).click();
-  await expect(timeline).toContainText('正在回放画布调整');
+  await timeline.getByRole('button', { name: '播放修改动画' }).click();
+  await expect(timeline).toContainText('正在回放修改动画');
   await expect(timeline).toContainText('画面 r3');
 });
 

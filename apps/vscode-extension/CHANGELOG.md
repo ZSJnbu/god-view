@@ -2,6 +2,13 @@
 
 All notable changes to God View are documented here.
 
+## 0.3.38 - 2026-08-19
+
+- Keeps the map replay controls visible after reloads and before the first Agent patch, so users can always find the playback entry.
+- Preserves replay frames across duplicate authoritative snapshots in the same Webview session and shortens the default frame delay for smoother playback.
+- Reuses cached graph layout for data-only patches and limits Cytoscape transitions to moved nodes and newly added edges, avoiding full-map animation on every update.
+- Adds browser regression coverage for the always-visible replay entry and updated playback labels.
+
 ## 0.3.37 - 2026-08-14
 
 - Fixes native Agent actions that appeared clickable but only refreshed status when the selected CLI was installed but not configured.

@@ -80,7 +80,7 @@ const initialAppState: AppState = {
 type Listener = () => void;
 type MapSnapshotEvent = Extract<ExtensionEvent, { type: 'map/snapshot' }>;
 type MapPatchEvent = Extract<ExtensionEvent, { type: 'map/patch' }>;
-const playbackFrameDelayMs = 720;
+const playbackFrameDelayMs = 460;
 const maximumSessionFrames = 200;
 
 /**
@@ -149,10 +149,16 @@ export class AppStore {
   }
 
   #receiveMapSnapshot(event: MapSnapshotEvent): void {
+    const sameMapSession =
+      this.#authoritativeMap.hydrated &&
+      this.#authoritativeMap.revision === event.document.revision &&
+      this.#sessionFrames.length > 0;
     this.#cancelPlaybackTimer();
     this.#pendingPatches = [];
-    this.#sessionFrames = [];
-    this.#sessionBaseline = undefined;
+    if (!sameMapSession) {
+      this.#sessionFrames = [];
+      this.#sessionBaseline = undefined;
+    }
     this.#authoritativeMap = applySnapshot(this.#state.map, {
       document: event.document,
       capabilities: event.capabilities,
@@ -169,7 +175,17 @@ export class AppStore {
       story: { ...this.#state.story, activeStoryId: undefined, stepIndex: 0, status: 'idle' },
       ...(event.agentPaneHeight === undefined ? {} : { agentPaneHeight: event.agentPaneHeight }),
       ...(event.agentPaneView === undefined ? {} : { agentPaneView: event.agentPaneView }),
-      playback: playbackState(this.#authoritativeMap.revision),
+      playback: sameMapSession
+        ? {
+            ...this.#state.playback,
+            status: 'live',
+            authoritativeRevision: this.#authoritativeMap.revision,
+            renderedRevision: this.#authoritativeMap.revision,
+            pendingCount: 0,
+            replaying: false,
+            sessionFrameCount: this.#sessionFrames.length,
+          }
+        : playbackState(this.#authoritativeMap.revision),
     });
   }
 

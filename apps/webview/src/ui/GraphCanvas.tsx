@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GuidedStoryStep, Identifier } from '@god-view/protocol';
 import { activeStoryStep, type AppStore } from '../app-store.js';
+import type { LayoutPositions } from '../model/store.js';
 import type { LayoutClient } from '../layout/layout-client.js';
 import { toLayoutRequest } from '../layout/layout-input.js';
 import { buildVisibleGraph } from '../model/view-model.js';
@@ -39,6 +40,12 @@ export function GraphCanvas(props: GraphCanvasProps): React.JSX.Element {
   const renderedGraphKeyRef = useRef<string | undefined>(undefined);
   const renderedViewKeyRef = useRef<string | undefined>(undefined);
   const renderedTopologyRevisionRef = useRef(0);
+  const layoutCacheRef = useRef<{
+    readonly graphKey: string;
+    readonly layout: LayoutPositions;
+    readonly topologyRevision: number;
+    readonly positions: LayoutPositions;
+  }>(undefined);
   const [relationHover, setRelationHover] = useState<RelationHover | undefined>();
   const { store, createAdapter, layoutClient, onOpenSource, onPersistLayout } = props;
 
@@ -100,7 +107,7 @@ export function GraphCanvas(props: GraphCanvasProps): React.JSX.Element {
         graphView.focusNodeId ?? '',
         String(graphView.focusDepth ?? ''),
         ...graph.nodes.map(({ node }) => node.id),
-        ...graph.edges.map((edge) => edge.id),
+        ...graph.edges.map((edge) => `${edge.id}:${edge.from}:${edge.to}`),
       ].join('\n'),
     [graph, graphView],
   );
@@ -115,13 +122,31 @@ export function GraphCanvas(props: GraphCanvasProps): React.JSX.Element {
       return undefined;
     }
     let cancelled = false;
-    void layoutClient.compute(toLayoutRequest(graph, state.map.layout)).then(async (result) => {
+    const cached = layoutCacheRef.current;
+    const cachedPositions =
+      cached?.graphKey === graphKey &&
+      cached.layout === state.map.layout &&
+      cached.topologyRevision === state.topologyRevision
+        ? cached.positions
+        : undefined;
+    void (cachedPositions === undefined
+      ? layoutClient.compute(toLayoutRequest(graph, state.map.layout)).then((result) => {
+          layoutCacheRef.current = {
+            graphKey,
+            layout: state.map.layout,
+            topologyRevision: state.topologyRevision,
+            positions: result.positions,
+          };
+          return result.positions;
+        })
+      : Promise.resolve(cachedPositions)
+    ).then(async (positions) => {
       if (cancelled) {
         return;
       }
       const firstRender = renderedGraphKeyRef.current === undefined;
       const completed = await adapter.render(graph, {
-        positions: result.positions,
+        positions,
         selectedId: state.selectedId,
         reducedMotion: state.map.capabilities?.reducedMotion ?? false,
         topologyRevision: state.topologyRevision,

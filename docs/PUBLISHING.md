@@ -22,7 +22,7 @@ repository and publisher ownership that code cannot choose on the owner's behalf
 
 1. Push the reviewed commit and require green CI on Linux, Windows, macOS and VS Code 1.96.0.
 2. Run `Release candidate` with `workflow_dispatch`. Inspect the VSIX and SHA-256 artifact.
-3. Create the immutable version tag matching the manifest, for example `v0.3.37`; require the tag-run
+3. Create the immutable version tag matching the manifest, for example `v0.3.38`; require the tag-run
    release workflow to pass as well.
 4. In Actions, run `Publish to VS Code Marketplace` with that tag and type `publish` exactly.
 5. Approve the protected `marketplace` environment only after comparing the artifact checksum and

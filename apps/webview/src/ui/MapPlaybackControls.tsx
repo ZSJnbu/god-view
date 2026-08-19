@@ -3,21 +3,26 @@ import { useAppState } from './use-app-state.js';
 
 export function MapPlaybackControls(props: { readonly store: AppStore }): React.JSX.Element | null {
   const playback = useAppState(props.store).playback;
-  if (playback.sessionFrameCount === 0 && playback.pendingCount === 0) return null;
   const behind = playback.authoritativeRevision - playback.renderedRevision;
+  const hasReplay = playback.sessionFrameCount > 0;
   return (
-    <section className="map-playback" aria-label="地图变更时间线">
+    <section className="map-playback" aria-label="修改动画回放">
       <div>
         <strong>
           {playback.replaying
-            ? '正在回放画布调整'
+            ? '正在回放修改动画'
             : playback.pendingCount > 0
               ? '正在渐进绘制'
-              : '已跟上最新地图'}
+              : hasReplay
+                ? '修改动画已就绪'
+                : '修改动画回放'}
         </strong>
         <span>
-          画面 r{playback.renderedRevision} · 权威 r{playback.authoritativeRevision}
-          {behind > 0 ? ` · 待播放 ${String(playback.pendingCount)} 步` : ''}
+          {hasReplay
+            ? `画面 r${String(playback.renderedRevision)} · 权威 r${String(playback.authoritativeRevision)}${
+                behind > 0 ? ` · 待播放 ${String(playback.pendingCount)} 步` : ''
+              }`
+            : 'Agent 产生地图补丁后，可在这里逐步播放或回放修改'}
         </span>
       </div>
       <div className="map-playback__actions">
@@ -74,8 +79,8 @@ export function MapPlaybackControls(props: { readonly store: AppStore }): React.
           onClick={() => {
             props.store.replayMapSession();
           }}
-        >
-          回放画布调整
+          >
+            播放修改动画
         </button>
         <button
           type="button"

@@ -125,6 +125,7 @@ export class CytoscapeAdapter {
     const newDefinitions = elements.filter(
       (element) => !existingIds.has(readElementData(element).id),
     );
+    const newIds = new Set(newDefinitions.map((element) => readElementData(element).id));
     const existingDefinitions = elements.filter((element) =>
       existingIds.has(readElementData(element).id),
     );
@@ -158,7 +159,32 @@ export class CytoscapeAdapter {
       this.#applySelection(options.selectedId);
     });
 
-    for (const { node } of graph.nodes) {
+    const movedNodes = graph.nodes.filter(({ node }) => {
+      const target = options.positions[node.id];
+      const current = this.#cy.getElementById(node.id);
+      return (
+        target !== undefined &&
+        !current.empty() &&
+        (newIds.has(node.id) ||
+          Math.abs(current.position('x') - target.x) > 0.5 ||
+          Math.abs(current.position('y') - target.y) > 0.5)
+      );
+    });
+    const newEdges = [...newIds].some((id) => !this.#cy.getElementById(id).empty() && this.#cy.getElementById(id).isEdge());
+
+    // 只有结构或坐标真的变化时才启动转场；文本/状态补丁只更新数据并立即完成，
+    // 避免每次 MCP 事实更新都让整张图重新淡入淡出。
+    if (leaving.empty() && movedNodes.length === 0 && !newEdges) {
+      this.#restoreTransitionVisibility();
+      this.#resolveCurrentNodeOverlaps();
+      this.#routeCurrentEdges();
+      this.#setTransitioning(false);
+      this.#updateRenderMetrics();
+      this.#pulseChanged(options);
+      return true;
+    }
+
+    for (const { node } of movedNodes) {
       const target = options.positions[node.id];
       const element = this.#cy.getElementById(node.id);
       if (target === undefined || element.empty()) continue;
@@ -167,9 +193,11 @@ export class CytoscapeAdapter {
         { duration: 320, easing: 'ease-in-out-cubic', queue: false },
       );
     }
-    this.#cy
-      .edges()
-      .animate({ style: { opacity: 1 } }, { duration: 260, easing: 'ease-in', queue: false });
+    if (newEdges) {
+      this.#cy
+        .edges()
+        .animate({ style: { opacity: 1 } }, { duration: 260, easing: 'ease-in', queue: false });
+    }
     await wait(330);
     if (token !== this.#transitionToken) return false;
     this.#restoreTransitionVisibility();
