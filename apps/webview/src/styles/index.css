@@ -95,6 +95,14 @@ body {
   height: 100%;
 }
 
+.app__body > .map-playback {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  right: 0;
+  left: 0;
+}
+
 /* 首次建图 */
 
 .empty-map {

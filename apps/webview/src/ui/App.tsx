@@ -172,7 +172,6 @@ export function App({
       />
       <StoryPlayer store={store} />
       <ViewContext store={store} />
-      <MapPlaybackControls store={store} />
       <div className="app__body">
         <GraphCanvas
           store={store}
@@ -181,6 +180,7 @@ export function App({
           onOpenSource={openNodeSource}
           onPersistLayout={persistLayout}
         />
+        <MapPlaybackControls store={store} />
         {(state.selectedId !== undefined || (state.view.query ?? '').trim() !== '') && (
           <DetailsPanel
             store={store}
